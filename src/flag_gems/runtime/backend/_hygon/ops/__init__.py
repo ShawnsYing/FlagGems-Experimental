@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from ._amp_foreach_non_finite_check_and_unscale_ import (
+    _amp_foreach_non_finite_check_and_unscale_,
+)
 from .adaptive_max_pool3d_backward import adaptive_max_pool3d_backward
 from .addr import addr
 from .any import any, any_dim, any_dims
@@ -122,6 +125,7 @@ from .weight_norm import (
 )
 
 __all__ = [
+    "_amp_foreach_non_finite_check_and_unscale_",
     "_unique2",
     "adaptive_max_pool3d_backward",
     "avg_pool3d_backward",
