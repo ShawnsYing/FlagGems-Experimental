@@ -121,6 +121,8 @@ __all__ = [
     "linalg_solve_triangular_out",
     "linalg_svdvals",
     "log_sigmoid_forward",
+    "lgamma",
+    "lgamma_",
     "log_softmax",
     "log_softmax_backward",
     "logical_or",
