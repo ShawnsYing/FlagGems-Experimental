@@ -31,6 +31,7 @@ from .linalg_solve_triangular import (
     linalg_solve_triangular_out,
 )
 from .linalg_svdvals import linalg_svdvals
+from .linear_backward import linear_backward
 from .log_sigmoid_forward import log_sigmoid_forward
 from .log_softmax import log_softmax, log_softmax_backward
 from .logical_or import logical_or, logical_or_
