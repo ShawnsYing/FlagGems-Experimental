@@ -13,17 +13,14 @@
 # limitations under the License.
 
 import logging
-
-logger = logging.getLogger(__name__)
-
 import math
 
 import torch
-import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _repad3d_bwd_gather(
     grad_out_ptr,
     grad_in_ptr,
@@ -69,10 +66,26 @@ def _repad3d_bwd_gather(
     kp = tl.arange(0, MAX_WP)
     kb = tl.arange(0, MAX_WB)
 
-    lo_d = tl.where(D_in == 1, 0, tl.where(d == 0, 0, tl.where(d == D_in - 1, D_in - 1 + PF, d + PF)))
-    cnt_d = tl.where(D_in == 1, D_out, tl.where(d == 0, PF + 1, tl.where(d == D_in - 1, D_out - (D_in - 1 + PF), 1)))
-    lo_h = tl.where(H_in == 1, 0, tl.where(h == 0, 0, tl.where(h == H_in - 1, H_in - 1 + PT, h + PT)))
-    cnt_h = tl.where(H_in == 1, H_out, tl.where(h == 0, PT + 1, tl.where(h == H_in - 1, H_out - (H_in - 1 + PT), 1)))
+    lo_d = tl.where(
+        D_in == 1,
+        0,
+        tl.where(d == 0, 0, tl.where(d == D_in - 1, D_in - 1 + PF, d + PF)),
+    )
+    cnt_d = tl.where(
+        D_in == 1,
+        D_out,
+        tl.where(d == 0, PF + 1, tl.where(d == D_in - 1, D_out - (D_in - 1 + PF), 1)),
+    )
+    lo_h = tl.where(
+        H_in == 1,
+        0,
+        tl.where(h == 0, 0, tl.where(h == H_in - 1, H_in - 1 + PT, h + PT)),
+    )
+    cnt_h = tl.where(
+        H_in == 1,
+        H_out,
+        tl.where(h == 0, PT + 1, tl.where(h == H_in - 1, H_out - (H_in - 1 + PT), 1)),
+    )
 
     in_off = (b * D_in + d) * H_in * W_in + h * W_in + w
     out_base = (b * D_out) * H_out * W_out
@@ -85,14 +98,24 @@ def _repad3d_bwd_gather(
                 if th < cnt_h:
                     ho = lo_h + th
                     base = out_base + do * (H_out * W_out) + ho * W_out
-                    acc += tl.load(grad_out_ptr + base + w + PL, mask=vmask, other=0.0).to(ACC)
+                    acc += tl.load(
+                        grad_out_ptr + base + w + PL, mask=vmask, other=0.0
+                    ).to(ACC)
                     if PL >= 1:
-                        f = tl.sum(tl.load(grad_out_ptr + base + kp, mask=kp < PL, other=0.0).to(ACC))
+                        f = tl.sum(
+                            tl.load(
+                                grad_out_ptr + base + kp, mask=kp < PL, other=0.0
+                            ).to(ACC)
+                        )
                         acc += tl.where(w == 0, f, 0.0)
                     if PR >= 1:
-                        bsum = tl.sum(tl.load(
-                            grad_out_ptr + base + W_in + PL + kb,
-                            mask=(kb < PR) & (W_in + PL + kb >= 0), other=0.0).to(ACC))
+                        bsum = tl.sum(
+                            tl.load(
+                                grad_out_ptr + base + W_in + PL + kb,
+                                mask=(kb < PR) & (W_in + PL + kb >= 0),
+                                other=0.0,
+                            ).to(ACC)
+                        )
                         acc += tl.where(w == W_in - 1, bsum, 0.0)
     tl.store(grad_in_ptr + in_off, acc, mask=wmask)
 
@@ -105,9 +128,7 @@ def replication_pad3d_backward(grad_output, self, padding):
     # ATen replication_pad3d_backward: self (*, D, H, W), grad_output (*, D+pf+pbk, H+pt+pb, W+pl+pr)
     # padding: (pl, pr, pt, pb, pf, pbk)
     if tuple(grad_output.shape[:-3]) != tuple(self.shape[:-3]):
-        raise ValueError(
-            "grad_output and self must have matching leading dimensions"
-        )
+        raise ValueError("grad_output and self must have matching leading dimensions")
     spatial = self.shape[-3:]
     D, H, W = int(spatial[0]), int(spatial[1]), int(spatial[2])
     B = int(math.prod(self.shape[:-3])) if self.dim() > 3 else 1
@@ -145,11 +166,25 @@ def replication_pad3d_backward(grad_output, self, padding):
     grid = ((W + block_w - 1) // block_w, H * B * D)
     with torch.cuda.device(go.device):
         _repad3d_bwd_gather[grid](
-            go, out,
-            ACC=acc, D_in=D, H_in=H, W_in=W, D_out=D_out, H_out=H_out, W_out=W_out,
-            PF=pf, PT=pt, PL=pl, PR=pr,
-            MAX_D=maxd, MAX_H=maxh, MAX_WP=maxwp, MAX_WB=maxwb,
-            BLOCK_W=block_w, num_warps=num_warps,
+            go,
+            out,
+            ACC=acc,
+            D_in=D,
+            H_in=H,
+            W_in=W,
+            D_out=D_out,
+            H_out=H_out,
+            W_out=W_out,
+            PF=pf,
+            PT=pt,
+            PL=pl,
+            PR=pr,
+            MAX_D=maxd,
+            MAX_H=maxh,
+            MAX_WP=maxwp,
+            MAX_WB=maxwb,
+            BLOCK_W=block_w,
+            num_warps=num_warps,
         )
 
     return out

@@ -14,11 +14,12 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
 
 _TL_DTYPE = {
     torch.float32: tl.float32,
@@ -36,8 +37,17 @@ _TL_DTYPE = {
 _ORIG_CUDNN_CONVOLUTION = torch.cudnn_convolution
 
 
-def _cudnn_convolution_shim(input, weight, padding, stride, dilation, groups,
-                            benchmark, deterministic, allow_tf32):
+def _cudnn_convolution_shim(
+    input,
+    weight,
+    padding,
+    stride,
+    dilation,
+    groups,
+    benchmark,
+    deterministic,
+    allow_tf32,
+):
     if input.dim() == 3:
         cudnn_mod = getattr(torch.backends, "cudnn", None)
         old = None
@@ -49,16 +59,27 @@ def _cudnn_convolution_shim(input, weight, padding, stride, dilation, groups,
                 old = None
         try:
             return torch.conv1d(
-                input, weight, None,
-                stride=stride, padding=padding, dilation=dilation, groups=groups,
+                input,
+                weight,
+                None,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                groups=groups,
             )
         finally:
             if old is not None:
                 cudnn_mod.allow_tf32 = old
     return _ORIG_CUDNN_CONVOLUTION(
-        input, weight,
-        padding=padding, stride=stride, dilation=dilation, groups=groups,
-        benchmark=benchmark, deterministic=deterministic, allow_tf32=allow_tf32,
+        input,
+        weight,
+        padding=padding,
+        stride=stride,
+        dilation=dilation,
+        groups=groups,
+        benchmark=benchmark,
+        deterministic=deterministic,
+        allow_tf32=allow_tf32,
     )
 
 
@@ -88,17 +109,37 @@ def _norm_pair(v, ndim):
 
 @triton.jit
 def _conv_igemm_kernel(
-    in_ptr, w_ptr, out_ptr,
-    N, C_in, OC,
-    S0, S1, S2,
-    K0, K1, K2,
-    O0, O1, O2,
-    st0, st1, st2,
-    padL0, padL1, padL2,
-    dil0, dil1, dil2,
-    C_per_g, OC_per_g,
-    Sprod, Kprod, Oprod,
-    total_pix, Ktotal,
+    in_ptr,
+    w_ptr,
+    out_ptr,
+    N,
+    C_in,
+    OC,
+    S0,
+    S1,
+    S2,
+    K0,
+    K1,
+    K2,
+    O0,
+    O1,
+    O2,
+    st0,
+    st1,
+    st2,
+    padL0,
+    padL1,
+    padL2,
+    dil0,
+    dil1,
+    dil2,
+    C_per_g,
+    OC_per_g,
+    Sprod,
+    Kprod,
+    Oprod,
+    total_pix,
+    Ktotal,
     ACC_DTYPE: tl.constexpr,
     OUT_DTYPE: tl.constexpr,
     IN_DTYPE: tl.constexpr,
@@ -133,11 +174,11 @@ def _conv_igemm_kernel(
     pix_base = n * (C_in * Sprod)  # batch part of the input offset
 
     # Hoisted pixel-side spatial part of the input offset (computed once):
-    pix0 = o0 * st0 - padL0          # [BLOCK_SP]
-    pix1 = o1 * st1 - padL1          # [BLOCK_SP]
-    pix2 = o2 * st2 - padL2          # [BLOCK_SP]
-    pix_sp = pix0 * (S1 * S2) + pix1 * S2 + pix2          # [BLOCK_SP]
-    x_sp_base = pix_sp + pix_base                           # [BLOCK_SP]
+    pix0 = o0 * st0 - padL0  # [BLOCK_SP]
+    pix1 = o1 * st1 - padL1  # [BLOCK_SP]
+    pix2 = o2 * st2 - padL2  # [BLOCK_SP]
+    pix_sp = pix0 * (S1 * S2) + pix1 * S2 + pix2  # [BLOCK_SP]
+    x_sp_base = pix_sp + pix_base  # [BLOCK_SP]
 
     # out[oc, pix] = sum_k w[oc, k] * x[k, pix]
     acc = tl.zeros((BLOCK_OC, BLOCK_SP), dtype=ACC_DTYPE)
@@ -177,7 +218,17 @@ def _conv_igemm_kernel(
     tl.store(out_ptr + out_off, acc.to(OUT_DTYPE), mask=out_mask)
 
 
-def cudnn_convolution(input, weight, padding, stride, dilation, groups, benchmark, deterministic, allow_tf32):
+def cudnn_convolution(
+    input,
+    weight,
+    padding,
+    stride,
+    dilation,
+    groups,
+    benchmark,
+    deterministic,
+    allow_tf32,
+):
     N, C_in = input.shape[0], input.shape[1]
     OC = weight.shape[0]
     ndim = input.dim() - 2
@@ -193,7 +244,7 @@ def cudnn_convolution(input, weight, padding, stride, dilation, groups, benchmar
     st, _ = _norm_pair(stride, ndim)
     dil, _ = _norm_pair(dilation, ndim)
 
-    O = [
+    output_sizes = [
         (s + padL[d] + padR[d] - dil[d] * (K[d] - 1) - 1) // st[d] + 1
         for d, s in enumerate(S)
     ]
@@ -204,7 +255,7 @@ def cudnn_convolution(input, weight, padding, stride, dilation, groups, benchmar
     # pad spatial dims to 3
     S3 = [S[d] if d < ndim else 1 for d in range(3)]
     K3 = [K[d] if d < ndim else 1 for d in range(3)]
-    O3 = [O[d] if d < ndim else 1 for d in range(3)]
+    O3 = [output_sizes[d] if d < ndim else 1 for d in range(3)]
     st3 = [st[d] if d < ndim else 1 for d in range(3)]
     padL3 = [padL[d] if d < ndim else 0 for d in range(3)]
     dil3 = [dil[d] if d < ndim else 1 for d in range(3)]
@@ -215,7 +266,9 @@ def cudnn_convolution(input, weight, padding, stride, dilation, groups, benchmar
     total_pix = N * Oprod
     Ktotal = C_per_g * Kprod
 
-    out = torch.empty((N, OC) + tuple(O), dtype=input.dtype, device=input.device)
+    out = torch.empty(
+        (N, OC) + tuple(output_sizes), dtype=input.dtype, device=input.device
+    )
 
     if total_pix == 0:
         return out
@@ -233,17 +286,37 @@ def cudnn_convolution(input, weight, padding, stride, dilation, groups, benchmar
 
     grid = (triton.cdiv(total_pix, BLOCK_SP), groups * triton.cdiv(OC_per_g, BLOCK_OC))
     _conv_igemm_kernel[grid](
-        input, weight, out,
-        N, C_in, OC,
-        S3[0], S3[1], S3[2],
-        K3[0], K3[1], K3[2],
-        O3[0], O3[1], O3[2],
-        st3[0], st3[1], st3[2],
-        padL3[0], padL3[1], padL3[2],
-        dil3[0], dil3[1], dil3[2],
-        C_per_g, OC_per_g,
-        Sprod, Kprod, Oprod,
-        total_pix, Ktotal,
+        input,
+        weight,
+        out,
+        N,
+        C_in,
+        OC,
+        S3[0],
+        S3[1],
+        S3[2],
+        K3[0],
+        K3[1],
+        K3[2],
+        O3[0],
+        O3[1],
+        O3[2],
+        st3[0],
+        st3[1],
+        st3[2],
+        padL3[0],
+        padL3[1],
+        padL3[2],
+        dil3[0],
+        dil3[1],
+        dil3[2],
+        C_per_g,
+        OC_per_g,
+        Sprod,
+        Kprod,
+        Oprod,
+        total_pix,
+        Ktotal,
         ACC_DTYPE=tl.float32,
         OUT_DTYPE=_TL_DTYPE[input.dtype],
         IN_DTYPE=_TL_DTYPE[input.dtype],

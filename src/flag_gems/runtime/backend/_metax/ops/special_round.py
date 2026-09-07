@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-
-logger = logging.getLogger(__name__)
-
 """special_round: elementwise round to a given number of decimals.
 
 Matches torch.special.round(x, decimals=d) semantics (verified on target):
@@ -33,12 +29,16 @@ Matches torch.special.round(x, decimals=d) semantics (verified on target):
 
 Self-contained Triton implementation; no framework fallback for the result.
 """
+
+import logging
+
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _exact_div(a, b, IS_F64: tl.constexpr):
     if IS_F64:
         return a / b
@@ -57,13 +57,18 @@ def _narrow_roundtrip(x, IS_F16: tl.constexpr, IS_BF16: tl.constexpr):
 
 
 @triton.jit
-def _special_round_kernel(a_ptr, o_ptr, mult, n_elements,
-                          DECIMALS: tl.constexpr,
-                          IS_F64: tl.constexpr,
-                          IS_F16: tl.constexpr,
-                          IS_BF16: tl.constexpr,
-                          MASKED: tl.constexpr,
-                          BLOCK: tl.constexpr):
+def _special_round_kernel(
+    a_ptr,
+    o_ptr,
+    mult,
+    n_elements,
+    DECIMALS: tl.constexpr,
+    IS_F64: tl.constexpr,
+    IS_F16: tl.constexpr,
+    IS_BF16: tl.constexpr,
+    MASKED: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
     if MASKED:
@@ -92,16 +97,42 @@ def _special_round_kernel(a_ptr, o_ptr, mult, n_elements,
 
 
 @triton.jit
-def _special_round_strided_kernel(a_ptr, o_ptr, mult, n_elements,
-                                  S0, S1, S2, S3, S4, S5, S6, S7,
-                                  IT0, IT1, IT2, IT3, IT4, IT5, IT6, IT7,
-                                  OT0, OT1, OT2, OT3, OT4, OT5, OT6, OT7,
-                                  RANK: tl.constexpr,
-                                  DECIMALS: tl.constexpr,
-                                  IS_F64: tl.constexpr,
-                                  IS_F16: tl.constexpr,
-                                  IS_BF16: tl.constexpr,
-                                  BLOCK: tl.constexpr):
+def _special_round_strided_kernel(
+    a_ptr,
+    o_ptr,
+    mult,
+    n_elements,
+    S0,
+    S1,
+    S2,
+    S3,
+    S4,
+    S5,
+    S6,
+    S7,
+    IT0,
+    IT1,
+    IT2,
+    IT3,
+    IT4,
+    IT5,
+    IT6,
+    IT7,
+    OT0,
+    OT1,
+    OT2,
+    OT3,
+    OT4,
+    OT5,
+    OT6,
+    OT7,
+    RANK: tl.constexpr,
+    DECIMALS: tl.constexpr,
+    IS_F64: tl.constexpr,
+    IS_F16: tl.constexpr,
+    IS_BF16: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
     sizes = (S0, S1, S2, S3, S4, S5, S6, S7)
     istr = (IT0, IT1, IT2, IT3, IT4, IT5, IT6, IT7)
     ostr = (OT0, OT1, OT2, OT3, OT4, OT5, OT6, OT7)
@@ -157,7 +188,7 @@ def special_round(A, *, decimals=0):
         mult = 1.0
     else:
         p = decimals if decimals > 0 else -decimals
-        mult = float(torch.tensor(10.0 ** p, dtype=A.dtype).item())
+        mult = float(torch.tensor(10.0**p, dtype=A.dtype).item())
 
     is_f64 = A.dtype == torch.float64
     is_f16 = A.dtype == torch.float16
@@ -188,9 +219,17 @@ def special_round(A, *, decimals=0):
         masked = (n % block) != 0
         grid = (triton.cdiv(n, block),)
         _special_round_kernel[grid](
-            A, out, mult, n,
-            DECIMALS=decimals, IS_F64=is_f64, IS_F16=is_f16, IS_BF16=is_bf16,
-            MASKED=masked, BLOCK=block, num_warps=_NUM_WARPS,
+            A,
+            out,
+            mult,
+            n,
+            DECIMALS=decimals,
+            IS_F64=is_f64,
+            IS_F16=is_f16,
+            IS_BF16=is_bf16,
+            MASKED=masked,
+            BLOCK=block,
+            num_warps=_NUM_WARPS,
             num_stages=_NUM_STAGES,
         )
     else:
@@ -202,11 +241,40 @@ def special_round(A, *, decimals=0):
         BLOCK = 512
         grid = (triton.cdiv(n, BLOCK),)
         _special_round_strided_kernel[grid](
-            A, out, mult, n,
-            sz[0], sz[1], sz[2], sz[3], sz[4], sz[5], sz[6], sz[7],
-            ist[0], ist[1], ist[2], ist[3], ist[4], ist[5], ist[6], ist[7],
-            ost[0], ost[1], ost[2], ost[3], ost[4], ost[5], ost[6], ost[7],
-            RANK=rank, DECIMALS=decimals, IS_F64=is_f64, IS_F16=is_f16,
-            IS_BF16=is_bf16, BLOCK=BLOCK, num_warps=4,
+            A,
+            out,
+            mult,
+            n,
+            sz[0],
+            sz[1],
+            sz[2],
+            sz[3],
+            sz[4],
+            sz[5],
+            sz[6],
+            sz[7],
+            ist[0],
+            ist[1],
+            ist[2],
+            ist[3],
+            ist[4],
+            ist[5],
+            ist[6],
+            ist[7],
+            ost[0],
+            ost[1],
+            ost[2],
+            ost[3],
+            ost[4],
+            ost[5],
+            ost[6],
+            ost[7],
+            RANK=rank,
+            DECIMALS=decimals,
+            IS_F64=is_f64,
+            IS_F16=is_f16,
+            IS_BF16=is_bf16,
+            BLOCK=BLOCK,
+            num_warps=4,
         )
     return out

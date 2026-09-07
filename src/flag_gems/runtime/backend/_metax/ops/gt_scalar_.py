@@ -14,15 +14,16 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
-def _gt_scalar_kernel(A_ptr, b, n_elements, BLOCK_SIZE: tl.constexpr, USE_I64: tl.constexpr):
+
+def _gt_scalar_kernel(
+    A_ptr, b, n_elements, BLOCK_SIZE: tl.constexpr, USE_I64: tl.constexpr
+):
     pid = tl.program_id(0)
     if USE_I64:
         offsets = pid.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -46,7 +47,9 @@ def gt_scalar_(A, B):
     num_warps = 8 if A.dtype in (torch.float32, torch.float64) else 4
     grid = (triton.cdiv(numel, BLOCK_SIZE),)
     _gt_scalar_kernel[grid](
-        A, b, numel,
+        A,
+        b,
+        numel,
         BLOCK_SIZE=BLOCK_SIZE,
         USE_I64=numel >= (1 << 31),
         num_warps=num_warps,

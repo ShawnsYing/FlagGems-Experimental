@@ -14,17 +14,20 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _laddexp(a, b):
     m = tl.maximum(a, b)
-    return m + tl.log2(1.0 + tl.exp2(-tl.abs(a - b) * 1.4426950408889634)) * 0.6931471805599453
+    return (
+        m
+        + tl.log2(1.0 + tl.exp2(-tl.abs(a - b) * 1.4426950408889634))
+        * 0.6931471805599453
+    )
 
 
 @triton.jit
@@ -39,11 +42,16 @@ def _local_scan_nomax(x):
 
 @triton.jit
 def _lcse_loop_kernel(
-    inp_ptr, out_ptr,
-    N, inner, OUTER_STRIDE,
-    BLOCK_N: tl.constexpr, FULL: tl.constexpr,
+    inp_ptr,
+    out_ptr,
+    N,
+    inner,
+    OUTER_STRIDE,
+    BLOCK_N: tl.constexpr,
+    FULL: tl.constexpr,
     CARRY: tl.constexpr,
-    COMPUTE_F64: tl.constexpr, LOAD_CAST: tl.constexpr,
+    COMPUTE_F64: tl.constexpr,
+    LOAD_CAST: tl.constexpr,
 ):
     # Linear-space scan: z = exp2(x*LOG2E), c = cumsum(z); output = ln(c + S)
     # where S is the linear running sum of all previous chunks (S = exp of the
@@ -89,10 +97,16 @@ def _lcse_loop_kernel(
 
 @triton.jit
 def _lcse_sums_kernel(
-    inp_ptr, sums_ptr,
-    N, M, inner, OUTER_STRIDE,
-    BLOCK_N: tl.constexpr, FULL: tl.constexpr,
-    COMPUTE_F64: tl.constexpr, LOAD_CAST: tl.constexpr,
+    inp_ptr,
+    sums_ptr,
+    N,
+    M,
+    inner,
+    OUTER_STRIDE,
+    BLOCK_N: tl.constexpr,
+    FULL: tl.constexpr,
+    COMPUTE_F64: tl.constexpr,
+    LOAD_CAST: tl.constexpr,
 ):
     pid = tl.program_id(0)
     b = pid // M
@@ -120,7 +134,9 @@ def _lcse_sums_kernel(
 
 @triton.jit
 def _lcse_prefix_kernel(
-    sums_ptr, NB, M,
+    sums_ptr,
+    NB,
+    M,
     COMPUTE_F64: tl.constexpr,
 ):
     s = tl.program_id(0)
@@ -136,10 +152,17 @@ def _lcse_prefix_kernel(
 
 @triton.jit
 def _lcse_apply_kernel(
-    inp_ptr, out_ptr, sums_ptr,
-    N, M, inner, OUTER_STRIDE,
-    BLOCK_N: tl.constexpr, FULL: tl.constexpr,
-    COMPUTE_F64: tl.constexpr, LOAD_CAST: tl.constexpr,
+    inp_ptr,
+    out_ptr,
+    sums_ptr,
+    N,
+    M,
+    inner,
+    OUTER_STRIDE,
+    BLOCK_N: tl.constexpr,
+    FULL: tl.constexpr,
+    COMPUTE_F64: tl.constexpr,
+    LOAD_CAST: tl.constexpr,
 ):
     pid = tl.program_id(0)
     b = pid // M

@@ -14,14 +14,13 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _logical_not_kernel(x_ptr, n_elements, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)

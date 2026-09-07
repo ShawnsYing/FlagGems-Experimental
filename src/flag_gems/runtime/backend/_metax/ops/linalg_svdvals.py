@@ -1,7 +1,5 @@
 import logging
-
 import torch
-
 from flag_gems.ops.linalg_svdvals import linalg_svdvals as _generic_linalg_svdvals
 
 logger = logging.getLogger("flag_gems." + __name__)

@@ -14,13 +14,12 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _gt_inplace_kernel(a_ptr, b_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
     pid = tl.program_id(0).to(tl.int64)
     offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)

@@ -14,11 +14,12 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
 
 _STATIC_MAX = 32
 
@@ -50,7 +51,7 @@ def _legendre_p_static(
         res = x
     else:
         p_prev2 = tl.full([BLOCK], 1.0, DTYPE)  # P_0(x)
-        p_prev1 = x                             # P_1(x)
+        p_prev1 = x  # P_1(x)
         for k in tl.static_range(2, N + 1):
             kf = float(k)
             p_new = ((2.0 * kf - 1.0) * x * p_prev1 - (kf - 1.0) * p_prev2) / kf
@@ -122,7 +123,7 @@ def _legendre_p_dyn(
     x = tl.load(x_ptr + offs, mask=mask, other=0.0).to(DTYPE)
 
     p_prev2 = tl.full([BLOCK], 1.0, DTYPE)  # P_0(x)
-    p_prev1 = x                             # P_1(x)
+    p_prev1 = x  # P_1(x)
     for k in tl.range(2, n + 1):
         kf = k.to(DTYPE)
         p_new = ((2.0 * kf - 1.0) * x * p_prev1 - (kf - 1.0) * p_prev2) / kf
@@ -186,7 +187,7 @@ def special_legendre_polynomial_p(x, n):
             )
     elif 0 <= n <= _STATIC_MAX:
         BLOCK, NW = _pick(numel)
-        masked = (numel % BLOCK != 0)
+        masked = numel % BLOCK != 0
         grid = (triton.cdiv(numel, BLOCK),)
         _legendre_p_static[grid](
             x,

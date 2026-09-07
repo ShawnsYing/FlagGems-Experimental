@@ -14,26 +14,32 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
-import json
-import os
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _mm_kernel(
-    A, B, Scales, Out,
-    M, N, K,
-    stride_am, stride_ak,
-    stride_bn, stride_bk,
+    A,
+    B,
+    Scales,
+    Out,
+    M,
+    N,
+    K,
+    stride_am,
+    stride_ak,
+    stride_bn,
+    stride_bk,
     stride_sn,
-    stride_om, stride_on,
+    stride_om,
+    stride_on,
     OUT_DTYPE: tl.constexpr,
-    BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
     EVEN: tl.constexpr,
 ):
@@ -85,14 +91,24 @@ def _mm_kernel(
 
 @triton.jit
 def _w8pack_mm_kernel(
-    A, B, Scales, Out,
-    M, N, K,
-    stride_am, stride_ak,
-    stride_bn, stride_bk,
+    A,
+    B,
+    Scales,
+    Out,
+    M,
+    N,
+    K,
+    stride_am,
+    stride_ak,
+    stride_bn,
+    stride_bk,
     stride_sn,
-    stride_om, stride_on,
+    stride_om,
+    stride_on,
     OUT_DTYPE: tl.constexpr,
-    BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
     EVEN: tl.constexpr,
 ):
@@ -144,14 +160,20 @@ def _w8pack_mm_kernel(
 
 @triton.jit
 def _w8pack_gemv1_kernel(
-    A, B, Scales, Out,
-    N, K,
+    A,
+    B,
+    Scales,
+    Out,
+    N,
+    K,
     stride_ak,
-    stride_bn, stride_bk,
+    stride_bn,
+    stride_bk,
     stride_sn,
     stride_on,
     OUT_DTYPE: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
     EVEN: tl.constexpr,
 ):
     pid = tl.program_id(0)
@@ -169,8 +191,11 @@ def _w8pack_gemv1_kernel(
         s = tl.load(Scales + offs_n * stride_sn)
         acc = acc * s.to(tl.float32)[None, :]
         offs_m0 = tl.arange(0, 16)
-        tl.store(Out + offs_m0[:, None] * stride_on + offs_n[None, :] * stride_on,
-                 acc.to(OUT_DTYPE), mask=(offs_m0 == 0)[:, None])
+        tl.store(
+            Out + offs_m0[:, None] * stride_on + offs_n[None, :] * stride_on,
+            acc.to(OUT_DTYPE),
+            mask=(offs_m0 == 0)[:, None],
+        )
     else:
         n_mask = offs_n < N
         for k0 in range(0, K, BLOCK_K):
@@ -178,14 +203,20 @@ def _w8pack_gemv1_kernel(
             km = kk < K
             a = tl.load(A + kk * stride_ak, mask=km, other=0.0).to(tl.float16)
             a16 = tl.broadcast_to(a[None, :], (16, BLOCK_K))
-            b = tl.load(B + offs_n[:, None] * stride_bn + kk[None, :] * stride_bk,
-                        mask=n_mask[:, None] & km[None, :], other=0)
+            b = tl.load(
+                B + offs_n[:, None] * stride_bn + kk[None, :] * stride_bk,
+                mask=n_mask[:, None] & km[None, :],
+                other=0,
+            )
             acc = tl.dot(a16, tl.trans(b.to(tl.float16)), acc)
         s = tl.load(Scales + offs_n * stride_sn, mask=n_mask, other=0.0)
         acc = acc * s.to(tl.float32)[None, :]
         offs_m0 = tl.arange(0, 16)
-        tl.store(Out + offs_m0[:, None] * stride_on + offs_n[None, :] * stride_on,
-                 acc.to(OUT_DTYPE), mask=(offs_m0 == 0)[:, None] & (offs_n < N)[None, :])
+        tl.store(
+            Out + offs_m0[:, None] * stride_on + offs_n[None, :] * stride_on,
+            acc.to(OUT_DTYPE),
+            mask=(offs_m0 == 0)[:, None] & (offs_n < N)[None, :],
+        )
 
 
 def weight_int8pack_mm(A, B, scales):

@@ -14,14 +14,14 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 from triton.language.extra.cuda import libdevice
 
-# log(pi), used only to form a compile-time constant coefficient
+logger = logging.getLogger(__name__)
+
+
 LOG_PI = tl.constexpr(1.1447298858494002)
 
 # Lazily-built constant lookup tables: for fp16/bf16 inputs, mvlgamma(x, p)
@@ -61,7 +61,7 @@ def _mvlgamma_kernel(
     xv = x.to(COMPUTE)
 
     # coefficient = (P*(P-1)/4) * log(pi), a compile-time constant
-    coef = (P * (P - 1) * 0.25 * LOG_PI)
+    coef = P * (P - 1) * 0.25 * LOG_PI
     acc = xv * 0.0 + coef
     for i in tl.static_range(P):
         arg = xv - 0.5 * i
@@ -117,8 +117,14 @@ def _get_value_table(dtype, device, p):
             vals = idx.to(torch.int16).view(torch.bfloat16)
         t = torch.empty(n, dtype=dtype, device=device)
         _mvlgamma_kernel[(triton.cdiv(n, 1024),)](
-            vals, t, n,
-            P=p, COMPUTE=tl.float32, ROUND=True, BLOCK=1024, UNMASKED=True,
+            vals,
+            t,
+            n,
+            P=p,
+            COMPUTE=tl.float32,
+            ROUND=True,
+            BLOCK=1024,
+            UNMASKED=True,
             num_warps=4,
         )
         _VALUE_TABLES[key] = t
@@ -157,15 +163,25 @@ def mvlgamma(self, p):
     if is_lowp:
         tbl = _get_value_table(dt, x.device, pv)
         _mvlgamma_value_kernel[grid](
-            x, tbl, out, numel,
-            BLOCK=BLOCK, UNMASKED=unmasked,
+            x,
+            tbl,
+            out,
+            numel,
+            BLOCK=BLOCK,
+            UNMASKED=unmasked,
             num_warps=num_warps,
         )
     else:
         compute = tl.float32 if dt == torch.float32 else tl.float64
         _mvlgamma_kernel[grid](
-            x, out, numel,
-            P=pv, COMPUTE=compute, ROUND=False, BLOCK=BLOCK, UNMASKED=unmasked,
+            x,
+            out,
+            numel,
+            P=pv,
+            COMPUTE=compute,
+            ROUND=False,
+            BLOCK=BLOCK,
+            UNMASKED=unmasked,
             num_warps=num_warps,
         )
     return out

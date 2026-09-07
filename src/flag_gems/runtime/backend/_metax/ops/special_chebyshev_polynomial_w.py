@@ -23,11 +23,9 @@ Optimizations over the generic pointwise_dynamic path:
 """
 
 import logging
-
 import torch
 import triton
 import triton.language as tl
-
 import flag_gems
 
 logger = logging.getLogger(__name__)

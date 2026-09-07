@@ -14,22 +14,32 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _adaptive_avg_pool2d_backward_rows(
-    gptr, optr, TOTAL,
-    s_g_nc, s_g_h, s_g_w,
-    s_o_nc, s_o_h, s_o_w,
-    H_in: tl.constexpr, W_in: tl.constexpr,
-    H_out: tl.constexpr, W_out: tl.constexpr,
-    acc_dtype: tl.constexpr, out_dtype: tl.constexpr,
-    BLOCK_W: tl.constexpr, MAXR_H: tl.constexpr, MAXR_W: tl.constexpr,
+    gptr,
+    optr,
+    TOTAL,
+    s_g_nc,
+    s_g_h,
+    s_g_w,
+    s_o_nc,
+    s_o_h,
+    s_o_w,
+    H_in: tl.constexpr,
+    W_in: tl.constexpr,
+    H_out: tl.constexpr,
+    W_out: tl.constexpr,
+    acc_dtype: tl.constexpr,
+    out_dtype: tl.constexpr,
+    BLOCK_W: tl.constexpr,
+    MAXR_H: tl.constexpr,
+    MAXR_W: tl.constexpr,
     ROWS: tl.constexpr,
 ):
     pid = tl.program_id(0)
@@ -75,13 +85,24 @@ def _adaptive_avg_pool2d_backward_rows(
 
 @triton.jit
 def _adaptive_avg_pool2d_backward_tile(
-    gptr, optr, TOTAL,
-    s_g_nc, s_g_h, s_g_w,
-    s_o_nc, s_o_h, s_o_w,
-    H_in: tl.constexpr, W_in: tl.constexpr,
-    H_out: tl.constexpr, W_out: tl.constexpr,
-    acc_dtype: tl.constexpr, out_dtype: tl.constexpr,
-    BLOCK_W: tl.constexpr, MAXR_H: tl.constexpr, MAXR_W: tl.constexpr,
+    gptr,
+    optr,
+    TOTAL,
+    s_g_nc,
+    s_g_h,
+    s_g_w,
+    s_o_nc,
+    s_o_h,
+    s_o_w,
+    H_in: tl.constexpr,
+    W_in: tl.constexpr,
+    H_out: tl.constexpr,
+    W_out: tl.constexpr,
+    acc_dtype: tl.constexpr,
+    out_dtype: tl.constexpr,
+    BLOCK_W: tl.constexpr,
+    MAXR_H: tl.constexpr,
+    MAXR_W: tl.constexpr,
     ROWS: tl.constexpr,
 ):
     pid = tl.program_id(0)
@@ -119,21 +140,36 @@ def _adaptive_avg_pool2d_backward_tile(
             addr = (gbase + oh * s_g_h)[:, None] + ow[None, :] * s_g_w
             g = tl.load(addr, mask=m, other=0.0)
             kw = ((ow + 1) * W_in + W_out - 1) // W_out - (ow * W_in) // W_out
-            acc += g.to(acc_dtype) / (kh.to(acc_dtype)[:, None] * kw.to(acc_dtype)[None, :])
+            acc += g.to(acc_dtype) / (
+                kh.to(acc_dtype)[:, None] * kw.to(acc_dtype)[None, :]
+            )
 
-    tl.store(obase[:, None] + iw[None, :] * s_o_w, acc.to(out_dtype),
-             mask=mask_r[:, None] & mask_iw[None, :])
+    tl.store(
+        obase[:, None] + iw[None, :] * s_o_w,
+        acc.to(out_dtype),
+        mask=mask_r[:, None] & mask_iw[None, :],
+    )
 
 
 @triton.jit
 def _adaptive_avg_pool2d_backward_exact(
-    gptr, optr, TOTAL,
-    s_g_nc, s_g_h, s_g_w,
-    s_o_nc, s_o_h, s_o_w,
-    H_in: tl.constexpr, W_in: tl.constexpr,
-    KH: tl.constexpr, KW: tl.constexpr,
-    acc_dtype: tl.constexpr, out_dtype: tl.constexpr,
-    BLOCK_W: tl.constexpr, ROWS: tl.constexpr,
+    gptr,
+    optr,
+    TOTAL,
+    s_g_nc,
+    s_g_h,
+    s_g_w,
+    s_o_nc,
+    s_o_h,
+    s_o_w,
+    H_in: tl.constexpr,
+    W_in: tl.constexpr,
+    KH: tl.constexpr,
+    KW: tl.constexpr,
+    acc_dtype: tl.constexpr,
+    out_dtype: tl.constexpr,
+    BLOCK_W: tl.constexpr,
+    ROWS: tl.constexpr,
 ):
     # Exact-division downsampling specialization:
     #   out[ih, iw] = grad[ih // KH, iw // KW] / (KH * KW)
@@ -174,22 +210,24 @@ def _triton_dtype(dt):
     return dt
 
 
-def _cover_max(I, O):
-    """Exact max over i in [0, I) of ceil((i+1)*O/I) - floor(i*O/I)."""
-    if I % O == 0:
+def _cover_max(input_size, output_size):
+    """Exact max over i in [0, input_size) of ceil((i+1)*output_size/input_size) - floor(i*output_size/input_size)."""
+    if input_size % output_size == 0:
         return 1
-    if O <= I:
+    if output_size <= input_size:
         # non-exact downsampling: window overlap (covering count 2) is guaranteed
         return 2
-    # O > I (upsampling): exact via loop when I is small, else safe loose bound
-    if I <= 4096:
+    # output_size > input_size (upsampling): exact via loop when input_size is small, else safe loose bound
+    if input_size <= 4096:
         m = 1
-        for i in range(I):
-            d = ((i + 1) * O + I - 1) // I - (i * O) // I
+        for i in range(input_size):
+            d = ((i + 1) * output_size + input_size - 1) // input_size - (
+                i * output_size
+            ) // input_size
             if d > m:
                 m = d
         return m
-    return min(O, (O + I - 1) // I + 1)
+    return min(output_size, (output_size + input_size - 1) // input_size + 1)
 
 
 def _adaptive_avg_pool2d_backward(grad_output, self):
@@ -232,11 +270,19 @@ def _adaptive_avg_pool2d_backward(grad_output, self):
         ROWS = 16 if BLOCK_W * 16 <= 1024 else 8
         grid = (triton.cdiv(TOTAL, ROWS), triton.cdiv(W_in, BLOCK_W))
         _adaptive_avg_pool2d_backward_exact[grid](
-            g, out, TOTAL,
-            g.stride(1), g.stride(2), g.stride(3),
-            out.stride(1), out.stride(2), out.stride(3),
-            H_in=H_in, W_in=W_in,
-            KH=H_in // H_out, KW=W_in // W_out,
+            g,
+            out,
+            TOTAL,
+            g.stride(1),
+            g.stride(2),
+            g.stride(3),
+            out.stride(1),
+            out.stride(2),
+            out.stride(3),
+            H_in=H_in,
+            W_in=W_in,
+            KH=H_in // H_out,
+            KW=W_in // W_out,
             acc_dtype=acc_dtype,
             out_dtype=_triton_dtype(out.dtype),
             BLOCK_W=BLOCK_W,
@@ -245,10 +291,19 @@ def _adaptive_avg_pool2d_backward(grad_output, self):
         )
     elif TOTAL >= 4096:
         _adaptive_avg_pool2d_backward_tile[grid](
-            g, out, TOTAL,
-            g.stride(1), g.stride(2), g.stride(3),
-            out.stride(1), out.stride(2), out.stride(3),
-            H_in=H_in, W_in=W_in, H_out=H_out, W_out=W_out,
+            g,
+            out,
+            TOTAL,
+            g.stride(1),
+            g.stride(2),
+            g.stride(3),
+            out.stride(1),
+            out.stride(2),
+            out.stride(3),
+            H_in=H_in,
+            W_in=W_in,
+            H_out=H_out,
+            W_out=W_out,
             acc_dtype=acc_dtype,
             out_dtype=_triton_dtype(out.dtype),
             BLOCK_W=BLOCK_W,
@@ -261,10 +316,19 @@ def _adaptive_avg_pool2d_backward(grad_output, self):
         ROWS = max(1, min(16, triton.next_power_of_2(TOTAL // 8192)))
         grid = (triton.cdiv(TOTAL, ROWS), triton.cdiv(W_in, BLOCK_W))
         _adaptive_avg_pool2d_backward_rows[grid](
-            g, out, TOTAL,
-            g.stride(1), g.stride(2), g.stride(3),
-            out.stride(1), out.stride(2), out.stride(3),
-            H_in=H_in, W_in=W_in, H_out=H_out, W_out=W_out,
+            g,
+            out,
+            TOTAL,
+            g.stride(1),
+            g.stride(2),
+            g.stride(3),
+            out.stride(1),
+            out.stride(2),
+            out.stride(3),
+            H_in=H_in,
+            W_in=W_in,
+            H_out=H_out,
+            W_out=W_out,
             acc_dtype=acc_dtype,
             out_dtype=_triton_dtype(out.dtype),
             BLOCK_W=BLOCK_W,

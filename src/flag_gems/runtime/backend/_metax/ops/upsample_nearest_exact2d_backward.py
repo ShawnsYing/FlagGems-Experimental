@@ -13,24 +13,27 @@
 # limitations under the License.
 
 import logging
-
-logger = logging.getLogger(__name__)
-
 import math
-import os
 
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _upsample_nearest_exact2d_backward_kernel(
-    grad_out_ptr, out_ptr,
-    H_in, W_in, H_out, W_out,
-    rheight, rwidth,
+    grad_out_ptr,
+    out_ptr,
+    H_in,
+    W_in,
+    H_out,
+    W_out,
+    rheight,
+    rwidth,
     total,
-    MAX_H: tl.constexpr, MAX_W: tl.constexpr,
+    MAX_H: tl.constexpr,
+    MAX_W: tl.constexpr,
     BLOCK: tl.constexpr,
     USE_F64: tl.constexpr,
     USE_I32: tl.constexpr,
@@ -88,10 +91,15 @@ def _upsample_nearest_exact2d_backward_kernel(
 
 @triton.jit
 def _upsample_nearest_exact2d_backward_int_kernel(
-    grad_out_ptr, out_ptr,
-    H_in, W_in, H_out, W_out,
+    grad_out_ptr,
+    out_ptr,
+    H_in,
+    W_in,
+    H_out,
+    W_out,
     total,
-    RH: tl.constexpr, RW: tl.constexpr,
+    RH: tl.constexpr,
+    RW: tl.constexpr,
     BLOCK: tl.constexpr,
     USE_F64: tl.constexpr,
     USE_I32: tl.constexpr,
@@ -136,12 +144,15 @@ def _upsample_nearest_exact2d_backward_int_kernel(
     tl.store(out_ptr + out_off, acc.to(out_ptr.dtype.element_ty), mask=mask)
 
 
-def _upsample_nearest_exact2d_backward(grad_output, output_size, input_size, scales_h=None, scales_w=None):
+def _upsample_nearest_exact2d_backward(
+    grad_output, output_size, input_size, scales_h=None, scales_w=None
+):
     H_out, W_out = int(output_size[0]), int(output_size[1])
     N, C, H_in, W_in = (int(x) for x in input_size)
 
-    out = torch.empty((N, C, H_in, W_in), device=grad_output.device,
-                      dtype=grad_output.dtype)
+    out = torch.empty(
+        (N, C, H_in, W_in), device=grad_output.device, dtype=grad_output.dtype
+    )
 
     rh = float(scales_h) if (scales_h is not None and scales_h > 0) else (H_out / H_in)
     rw = float(scales_w) if (scales_w is not None and scales_w > 0) else (W_out / W_in)
@@ -158,10 +169,15 @@ def _upsample_nearest_exact2d_backward(grad_output, output_size, input_size, sca
     rw_int = float(rw).is_integer() and rw >= 1.0
     if rh_int and rw_int:
         _upsample_nearest_exact2d_backward_int_kernel[grid](
-            grad_output, out,
-            H_in, W_in, H_out, W_out,
+            grad_output,
+            out,
+            H_in,
+            W_in,
+            H_out,
+            W_out,
             total,
-            RH=int(rh), RW=int(rw),
+            RH=int(rh),
+            RW=int(rw),
             BLOCK=BLOCK,
             USE_F64=use_f64,
             USE_I32=use_i32,
@@ -179,15 +195,19 @@ def _upsample_nearest_exact2d_backward(grad_output, output_size, input_size, sca
         else:
             max_w = max(1, int(math.ceil(rw)) + 1)
         _upsample_nearest_exact2d_backward_kernel[grid](
-            grad_output, out,
-            H_in, W_in, H_out, W_out,
-            rh, rw,
+            grad_output,
+            out,
+            H_in,
+            W_in,
+            H_out,
+            W_out,
+            rh,
+            rw,
             total,
-            MAX_H=max_h, MAX_W=max_w,
+            MAX_H=max_h,
+            MAX_W=max_w,
             BLOCK=BLOCK,
             USE_F64=use_f64,
             USE_I32=use_i32,
         )
     return out
-
-

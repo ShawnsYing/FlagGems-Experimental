@@ -26,10 +26,10 @@ Reference: https://github.com/Dao-AILab/fast-hadamard-transform
 """
 
 import math
-
 import torch
 import triton
 import triton.language as tl
+
 
 # ============================================================
 # Triton kernel — v1: remove scratch buffer, batch rows per block

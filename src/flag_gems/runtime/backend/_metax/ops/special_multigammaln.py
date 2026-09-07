@@ -14,14 +14,13 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
-import logging
-
 import torch
 import triton
 import triton.language as tl
 import triton.language.extra.cuda.libdevice as libdevice
+
+logger = logging.getLogger(__name__)
+
 
 _logger = logging.getLogger("flag_gems.ops.special_multigammaln")
 
@@ -203,8 +202,13 @@ def _mgl_core(x, P: tl.constexpr, USE_POLY: tl.constexpr, PREC: tl.constexpr):
 
 @triton.jit
 def _mgl_kernel_1d(
-    x_ptr, out_ptr, n_elements,
-    P: tl.constexpr, CT: tl.constexpr, PREC: tl.constexpr, BLOCK: tl.constexpr,
+    x_ptr,
+    out_ptr,
+    n_elements,
+    P: tl.constexpr,
+    CT: tl.constexpr,
+    PREC: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
@@ -216,8 +220,13 @@ def _mgl_kernel_1d(
 
 @triton.jit
 def _mgl_kernel_1d_m(
-    x_ptr, out_ptr, n_elements,
-    P: tl.constexpr, CT: tl.constexpr, PREC: tl.constexpr, BLOCK: tl.constexpr,
+    x_ptr,
+    out_ptr,
+    n_elements,
+    P: tl.constexpr,
+    CT: tl.constexpr,
+    PREC: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
@@ -240,8 +249,12 @@ def _mgl_loop_core(x, p):
 
 @triton.jit
 def _mgl_loop_kernel_1d(
-    x_ptr, out_ptr, n_elements, p,
-    CT: tl.constexpr, BLOCK: tl.constexpr,
+    x_ptr,
+    out_ptr,
+    n_elements,
+    p,
+    CT: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
@@ -254,10 +267,34 @@ def _mgl_loop_kernel_1d(
 
 @triton.jit
 def _mgl_kernel_nd(
-    x_ptr, out_ptr, last, n_lead,
-    b0, b1, b2, b3, b4, b5, b6, b7,
-    s0, s1, s2, s3, s4, s5, s6, s7, sl, ol,
-    p, P: tl.constexpr, CT: tl.constexpr, PREC: tl.constexpr, NDIM: tl.constexpr, BLOCK: tl.constexpr,
+    x_ptr,
+    out_ptr,
+    last,
+    n_lead,
+    b0,
+    b1,
+    b2,
+    b3,
+    b4,
+    b5,
+    b6,
+    b7,
+    s0,
+    s1,
+    s2,
+    s3,
+    s4,
+    s5,
+    s6,
+    s7,
+    sl,
+    ol,
+    p,
+    P: tl.constexpr,
+    CT: tl.constexpr,
+    PREC: tl.constexpr,
+    NDIM: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     # Grid: (cdiv(last, BLOCK), n_lead).  Decode the leading index (mixed
     # radix over the leading dimensions) to get the row base offset, then each
@@ -348,17 +385,37 @@ def special_multigammaln(self, p):
             if n % BLOCK == 0:
                 grid = (n // BLOCK,)
                 _mgl_kernel_1d[grid](
-                    self, out, n, P=p, CT=ct, PREC=PREC, BLOCK=BLOCK, num_warps=num_warps,
+                    self,
+                    out,
+                    n,
+                    P=p,
+                    CT=ct,
+                    PREC=PREC,
+                    BLOCK=BLOCK,
+                    num_warps=num_warps,
                 )
             else:
                 grid = (triton.cdiv(n, BLOCK),)
                 _mgl_kernel_1d_m[grid](
-                    self, out, n, P=p, CT=ct, PREC=PREC, BLOCK=BLOCK, num_warps=num_warps,
+                    self,
+                    out,
+                    n,
+                    P=p,
+                    CT=ct,
+                    PREC=PREC,
+                    BLOCK=BLOCK,
+                    num_warps=num_warps,
                 )
         else:
             grid = (triton.cdiv(n, BLOCK),)
             _mgl_loop_kernel_1d[grid](
-                self, out, n, p, CT=ct, BLOCK=BLOCK, num_warps=num_warps,
+                self,
+                out,
+                n,
+                p,
+                CT=ct,
+                BLOCK=BLOCK,
+                num_warps=num_warps,
             )
     else:
         last = self.shape[-1]
@@ -371,10 +428,34 @@ def special_multigammaln(self, p):
         strides = [self.stride(d) for d in range(ndim - 1)] + [0] * (8 - (ndim - 1))
         grid = (triton.cdiv(last, BLOCK), n_lead)
         _mgl_kernel_nd[grid](
-            self, out, last, n_lead,
-            sizes[0], sizes[1], sizes[2], sizes[3], sizes[4], sizes[5], sizes[6], sizes[7],
-            strides[0], strides[1], strides[2], strides[3], strides[4], strides[5], strides[6], strides[7],
-            self.stride(-1), out.stride(-1),
-            p, P=(p if p <= 12 else 0), CT=ct, PREC=PREC, NDIM=ndim, BLOCK=BLOCK, num_warps=num_warps,
+            self,
+            out,
+            last,
+            n_lead,
+            sizes[0],
+            sizes[1],
+            sizes[2],
+            sizes[3],
+            sizes[4],
+            sizes[5],
+            sizes[6],
+            sizes[7],
+            strides[0],
+            strides[1],
+            strides[2],
+            strides[3],
+            strides[4],
+            strides[5],
+            strides[6],
+            strides[7],
+            self.stride(-1),
+            out.stride(-1),
+            p,
+            P=(p if p <= 12 else 0),
+            CT=ct,
+            PREC=PREC,
+            NDIM=ndim,
+            BLOCK=BLOCK,
+            num_warps=num_warps,
         )
     return out

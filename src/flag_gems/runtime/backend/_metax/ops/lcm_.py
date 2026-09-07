@@ -14,11 +14,12 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
 
 MAX_DIM = 8
 BLOCK = 1024
@@ -65,8 +66,11 @@ def _lcm_flat(x_ptr, y_ptr, n_elements, UNROLL: tl.constexpr, BLOCK: tl.constexp
 
 @triton.jit
 def _lcm_strided(
-    x_ptr, y_ptr,
-    shape_ptr, x_stride_ptr, y_stride_ptr,
+    x_ptr,
+    y_ptr,
+    shape_ptr,
+    x_stride_ptr,
+    y_stride_ptr,
     n_elements,
     MAX_DIM: tl.constexpr,
     UNROLL: tl.constexpr,
@@ -147,7 +151,14 @@ def lcm_(self, other):
         unroll = 24 if small else 48
         grid = (triton.cdiv(n, BLOCK),)
         _lcm_strided[grid](
-            self, other, shape_t, xs_t, ys_t, n,
-            MAX_DIM=MAX_DIM, UNROLL=unroll, BLOCK=BLOCK,
+            self,
+            other,
+            shape_t,
+            xs_t,
+            ys_t,
+            n,
+            MAX_DIM=MAX_DIM,
+            UNROLL=unroll,
+            BLOCK=BLOCK,
         )
     return self

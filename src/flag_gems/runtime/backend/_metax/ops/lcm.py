@@ -14,11 +14,12 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
 
 _TL_TYPES = {
     torch.int8: tl.int8,
@@ -71,8 +72,15 @@ _BLOCK_BY_OUT = {
 
 
 @triton.jit
-def _lcm_core(a0, b0, CT: tl.constexpr, OT: tl.constexpr, UT: tl.constexpr,
-              P1: tl.constexpr, CHUNK: tl.constexpr):
+def _lcm_core(
+    a0,
+    b0,
+    CT: tl.constexpr,
+    OT: tl.constexpr,
+    UT: tl.constexpr,
+    P1: tl.constexpr,
+    CHUNK: tl.constexpr,
+):
     # torch.lcm semantics: g = gcd(|a|,|b|); res = |a/g*b| (0 if a==0 or b==0).
     # gcd via Euclid entirely in UNSIGNED arithmetic: bit-preserving cast of the
     # inputs to UT, then unsigned abs (negate-when-negative, so abs(INT_MIN) =
@@ -123,10 +131,18 @@ def _lcm_core(a0, b0, CT: tl.constexpr, OT: tl.constexpr, UT: tl.constexpr,
 
 
 @triton.jit
-def _lcm_1d(x_ptr, y_ptr, out_ptr, numel,
-            CT: tl.constexpr, OT: tl.constexpr, UT: tl.constexpr,
-            P1: tl.constexpr, CHUNK: tl.constexpr,
-            BLOCK: tl.constexpr):
+def _lcm_1d(
+    x_ptr,
+    y_ptr,
+    out_ptr,
+    numel,
+    CT: tl.constexpr,
+    OT: tl.constexpr,
+    UT: tl.constexpr,
+    P1: tl.constexpr,
+    CHUNK: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
     pid = tl.program_id(0)
     offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK).to(tl.int64)
     mask = offs < numel
@@ -137,11 +153,22 @@ def _lcm_1d(x_ptr, y_ptr, out_ptr, numel,
 
 
 @triton.jit
-def _lcm_bcast(x_ptr, y_ptr, out_ptr, numel,
-               shape_ptr, xst_ptr, yst_ptr,
-               CT: tl.constexpr, OT: tl.constexpr, UT: tl.constexpr,
-               P1: tl.constexpr, CHUNK: tl.constexpr,
-               NDIM: tl.constexpr, BLOCK: tl.constexpr):
+def _lcm_bcast(
+    x_ptr,
+    y_ptr,
+    out_ptr,
+    numel,
+    shape_ptr,
+    xst_ptr,
+    yst_ptr,
+    CT: tl.constexpr,
+    OT: tl.constexpr,
+    UT: tl.constexpr,
+    P1: tl.constexpr,
+    CHUNK: tl.constexpr,
+    NDIM: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
     pid = tl.program_id(0)
     offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK).to(tl.int64)
     mask = offs < numel
@@ -202,20 +229,50 @@ def lcm(self, other):
 
     if self.shape == other.shape and self.is_contiguous() and other.is_contiguous():
         grid = (triton.cdiv(numel, BLOCK),)
-        _lcm_1d[grid](self, other, out, numel, CT=ct, OT=ot, UT=ut,
-                      P1=P1, CHUNK=CHUNK, BLOCK=BLOCK, num_warps=WARPS)
+        _lcm_1d[grid](
+            self,
+            other,
+            out,
+            numel,
+            CT=ct,
+            OT=ot,
+            UT=ut,
+            P1=P1,
+            CHUNK=CHUNK,
+            BLOCK=BLOCK,
+            num_warps=WARPS,
+        )
     else:
         ndim = len(out_shape)
-        shape_rev = torch.tensor(list(reversed(out_shape)), dtype=torch.int64, device=self.device)
+        shape_rev = torch.tensor(
+            list(reversed(out_shape)), dtype=torch.int64, device=self.device
+        )
         xst_rev = torch.tensor(
             _broadcast_eff_strides(self.shape, self.stride(), ndim),
-            dtype=torch.int64, device=self.device)
+            dtype=torch.int64,
+            device=self.device,
+        )
         yst_rev = torch.tensor(
             _broadcast_eff_strides(other.shape, other.stride(), ndim),
-            dtype=torch.int64, device=self.device)
+            dtype=torch.int64,
+            device=self.device,
+        )
         grid = (triton.cdiv(numel, BLOCK),)
-        _lcm_bcast[grid](self, other, out, numel,
-                         shape_rev, xst_rev, yst_rev,
-                         CT=ct, OT=ot, UT=ut,
-                         P1=P1, CHUNK=CHUNK, NDIM=ndim, BLOCK=BLOCK, num_warps=WARPS)
+        _lcm_bcast[grid](
+            self,
+            other,
+            out,
+            numel,
+            shape_rev,
+            xst_rev,
+            yst_rev,
+            CT=ct,
+            OT=ot,
+            UT=ut,
+            P1=P1,
+            CHUNK=CHUNK,
+            NDIM=ndim,
+            BLOCK=BLOCK,
+            num_warps=WARPS,
+        )
     return out

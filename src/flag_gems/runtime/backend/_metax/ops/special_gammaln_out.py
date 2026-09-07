@@ -14,16 +14,16 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
-def _gammaln_kernel(x_ptr, y_ptr, n_elements, SIMPLE_DEG: tl.constexpr,
-                    BLOCK: tl.constexpr):
+
+def _gammaln_kernel(
+    x_ptr, y_ptr, n_elements, SIMPLE_DEG: tl.constexpr, BLOCK: tl.constexpr
+):
     pid = tl.program_id(axis=0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n_elements
@@ -37,10 +37,14 @@ def _gammaln_kernel(x_ptr, y_ptr, n_elements, SIMPLE_DEG: tl.constexpr,
         t = tl.where(is_shift, z + 8.0, z)
         inv = 1.0 / t
         w = inv * inv
-        corr = inv * (0.08333333333333333
-                      - w * (0.002777777777777778
-                             - w * (0.0007936507936507937
-                                    - w * 0.0005952380952380953)))
+        corr = inv * (
+            0.08333333333333333
+            - w
+            * (
+                0.002777777777777778
+                - w * (0.0007936507936507937 - w * 0.0005952380952380953)
+            )
+        )
         s = tl.math.fma(tl.log(t), t - 0.5, -t) + 0.9189385332046727 + corr
         prod = (z + 0.0) * (z + 1.0) * (z + 2.0) * (z + 3.0)
         prod = prod * (z + 4.0) * (z + 5.0) * (z + 6.0) * (z + 7.0)
@@ -64,8 +68,9 @@ def _gammaln_kernel(x_ptr, y_ptr, n_elements, SIMPLE_DEG: tl.constexpr,
         qacc = qacc * uq + -0.5101579427719116
         qacc = qacc * uq + -1.3451014757156372
         qacc = qacc * uq + -1.0266709327697754
-        y = tl.where(x >= 0.5, s,
-                     1.1447298858494002 - tl.log(3.141592653589793 * fr) - qacc - s)
+        y = tl.where(
+            x >= 0.5, s, 1.1447298858494002 - tl.log(3.141592653589793 * fr) - qacc - s
+        )
         y = tl.where(is_pole, float("inf"), y)
         y = tl.where((x == float("inf")) | ((x > 1.0e36) & (y != y)), float("inf"), y)
     else:
@@ -124,18 +129,19 @@ def _gammaln_kernel(x_ptr, y_ptr, n_elements, SIMPLE_DEG: tl.constexpr,
             qacc = qacc * uq + -0.5101579427719116
             qacc = qacc * uq + -1.3451014757156372
             qacc = qacc * uq + -1.0266709327697754
-        y = tl.where(x >= 0.5, s,
-                     1.1447298858494002 - tl.log(3.141592653589793 * fr) - qacc - s)
+        y = tl.where(
+            x >= 0.5, s, 1.1447298858494002 - tl.log(3.141592653589793 * fr) - qacc - s
+        )
 
     y = y.to(xin.dtype)
     tl.store(y_ptr + offs, y, mask=mask)
 
 
 _BLOCK = 512
-_NUM_WARPS = 1       # large workloads: B512/W1 = 16 elems/thread, max ILP
-_SMALL_N = 1 << 20   # at/below this element count, prefer more warps
-_SMALL_WARPS = 4     # small shapes: hide fixed launch overhead
-_TINY_N = 1 << 16    # tiny shapes: smaller blocks give more parallel CTAs
+_NUM_WARPS = 1  # large workloads: B512/W1 = 16 elems/thread, max ILP
+_SMALL_N = 1 << 20  # at/below this element count, prefer more warps
+_SMALL_WARPS = 4  # small shapes: hide fixed launch overhead
+_TINY_N = 1 << 16  # tiny shapes: smaller blocks give more parallel CTAs
 _TINY_BLOCK = 512
 
 
@@ -153,14 +159,17 @@ def special_gammaln_out(A, *, out=None):
     simple = A.dtype != torch.float32
     if n < _TINY_N:
         grid = (triton.cdiv(n, _TINY_BLOCK),)
-        _gammaln_kernel[grid](x, y, n, SIMPLE_DEG=simple,
-                              BLOCK=_TINY_BLOCK, num_warps=_SMALL_WARPS)
+        _gammaln_kernel[grid](
+            x, y, n, SIMPLE_DEG=simple, BLOCK=_TINY_BLOCK, num_warps=_SMALL_WARPS
+        )
     elif n <= _SMALL_N:
         grid = (triton.cdiv(n, _BLOCK),)
-        _gammaln_kernel[grid](x, y, n, SIMPLE_DEG=simple,
-                              BLOCK=_BLOCK, num_warps=_SMALL_WARPS)
+        _gammaln_kernel[grid](
+            x, y, n, SIMPLE_DEG=simple, BLOCK=_BLOCK, num_warps=_SMALL_WARPS
+        )
     else:
         grid = (triton.cdiv(n, _BLOCK),)
-        _gammaln_kernel[grid](x, y, n, SIMPLE_DEG=simple,
-                              BLOCK=_BLOCK, num_warps=_NUM_WARPS)
+        _gammaln_kernel[grid](
+            x, y, n, SIMPLE_DEG=simple, BLOCK=_BLOCK, num_warps=_NUM_WARPS
+        )
     return out

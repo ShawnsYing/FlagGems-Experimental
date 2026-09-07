@@ -14,25 +14,38 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _dwconv2d_kernel(
-    in_ptr, w_ptr, b_ptr, out_ptr,
-    C, OUTC, H, W, OH, OW,
-    in_hs, in_ws,
+    in_ptr,
+    w_ptr,
+    b_ptr,
+    out_ptr,
+    C,
+    OUTC,
+    H,
+    W,
+    OH,
+    OW,
+    in_hs,
+    in_ws,
     M,
     HAS_BIAS: tl.constexpr,
-    KH: tl.constexpr, KW: tl.constexpr,
-    SH: tl.constexpr, SW: tl.constexpr,
-    PH: tl.constexpr, PW: tl.constexpr,
-    DH: tl.constexpr, DW: tl.constexpr,
-    BLOCK_H: tl.constexpr, BLOCK_W: tl.constexpr,
+    KH: tl.constexpr,
+    KW: tl.constexpr,
+    SH: tl.constexpr,
+    SW: tl.constexpr,
+    PH: tl.constexpr,
+    PW: tl.constexpr,
+    DH: tl.constexpr,
+    DW: tl.constexpr,
+    BLOCK_H: tl.constexpr,
+    BLOCK_W: tl.constexpr,
 ):
     pid_nc = tl.program_id(0)
     pid_h = tl.program_id(1)
@@ -82,15 +95,27 @@ def _dwconv2d_kernel(
 
 @triton.jit
 def _dwconv2d_s2_kernel(
-    in_ptr, w_ptr, b_ptr, out_ptr,
-    C, OUTC, H, W, OH, OW,
-    in_hs, in_ws,
+    in_ptr,
+    w_ptr,
+    b_ptr,
+    out_ptr,
+    C,
+    OUTC,
+    H,
+    W,
+    OH,
+    OW,
+    in_hs,
+    in_ws,
     M,
     HAS_BIAS: tl.constexpr,
     KH: tl.constexpr,
-    SH: tl.constexpr, PH: tl.constexpr, DH: tl.constexpr,
+    SH: tl.constexpr,
+    PH: tl.constexpr,
+    DH: tl.constexpr,
     PW: tl.constexpr,
-    BLOCK_H: tl.constexpr, BLOCK_W: tl.constexpr,
+    BLOCK_H: tl.constexpr,
+    BLOCK_W: tl.constexpr,
 ):
     # Specialized for SW == 2, DW == 1, KW == 3.
     # iw = 2*ow - PW + kw  (kw in 0..2).  With c0 = -PW the three taps are:
@@ -219,31 +244,55 @@ def _conv_depthwise2d(input, weight, kernel_size, bias, stride, padding, dilatio
     grid = (N * OUTC, triton.cdiv(OH, BLOCK_H), triton.cdiv(OW, BLOCK_W))
     if SW == 2 and DW == 1 and KW == 3:
         _dwconv2d_s2_kernel[grid](
-            input, weight, b_ptr, out,
-            C, OUTC, H, W, OH, OW,
-            input.stride(2), input.stride(3),
+            input,
+            weight,
+            b_ptr,
+            out,
+            C,
+            OUTC,
+            H,
+            W,
+            OH,
+            OW,
+            input.stride(2),
+            input.stride(3),
             M,
             HAS_BIAS=has_bias,
             KH=KH,
-            SH=SH, PH=PH, DH=DH,
+            SH=SH,
+            PH=PH,
+            DH=DH,
             PW=PW,
-            BLOCK_H=BLOCK_H, BLOCK_W=BLOCK_W,
+            BLOCK_H=BLOCK_H,
+            BLOCK_W=BLOCK_W,
             num_warps=num_warps,
         )
     else:
         _dwconv2d_kernel[grid](
-            input, weight, b_ptr, out,
-            C, OUTC, H, W, OH, OW,
-            input.stride(2), input.stride(3),
+            input,
+            weight,
+            b_ptr,
+            out,
+            C,
+            OUTC,
+            H,
+            W,
+            OH,
+            OW,
+            input.stride(2),
+            input.stride(3),
             M,
             HAS_BIAS=has_bias,
-            KH=KH, KW=KW,
-            SH=SH, SW=SW,
-            PH=PH, PW=PW,
-            DH=DH, DW=DW,
-            BLOCK_H=BLOCK_H, BLOCK_W=BLOCK_W,
+            KH=KH,
+            KW=KW,
+            SH=SH,
+            SW=SW,
+            PH=PH,
+            PW=PW,
+            DH=DH,
+            DW=DW,
+            BLOCK_H=BLOCK_H,
+            BLOCK_W=BLOCK_W,
             num_warps=num_warps,
         )
     return out
-
-

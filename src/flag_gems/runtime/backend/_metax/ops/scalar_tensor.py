@@ -14,11 +14,12 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
 
 _TL_DTYPES = {
     torch.float32: tl.float32,
@@ -57,7 +58,9 @@ def scalar_tensor(s, *, dtype=None, layout=None, device=None, pin_memory=None):
     if layout is None:
         layout = torch.strided
 
-    out = torch.empty((), dtype=dtype, device=device, layout=layout, pin_memory=pin_memory)
+    out = torch.empty(
+        (), dtype=dtype, device=device, layout=layout, pin_memory=pin_memory
+    )
 
     if dtype == torch.bool:
         _scalar_fill_kernel[(1,)](out, bool(s), tl.int1)

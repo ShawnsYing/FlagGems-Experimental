@@ -16,10 +16,8 @@
 
 import logging
 import math
-
 import torch
 import triton
-
 from flag_gems.ops.topk import topk_stage1_kernel, topk_stage2_kernel
 from flag_gems.runtime import torch_device_fn
 

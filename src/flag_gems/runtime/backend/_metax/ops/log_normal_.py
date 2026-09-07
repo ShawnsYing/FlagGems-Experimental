@@ -18,6 +18,7 @@ import triton
 import triton.language as tl
 from triton.language.extra import libdevice
 
+
 _U1_FLOOR = tl.constexpr(3.731547881843398e-06)  # exp(-12.5): keeps |z| <= 5.0
 _TWO_PI = tl.constexpr(6.283185307179586)
 _LOG2E = tl.constexpr(1.4426950408889634)

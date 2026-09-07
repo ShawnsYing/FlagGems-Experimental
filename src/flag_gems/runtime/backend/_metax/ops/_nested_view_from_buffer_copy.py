@@ -1,5 +1,4 @@
 import logging
-
 import torch
 
 logger = logging.getLogger("flag_gems." + __name__)

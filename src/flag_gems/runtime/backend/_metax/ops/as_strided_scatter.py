@@ -13,14 +13,14 @@
 # limitations under the License.
 
 import logging
-
-logger = logging.getLogger(__name__)
-
 import math
 
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
 
 BLOCK = 1024
 MAX_NDIM = 8
@@ -35,12 +35,25 @@ def _copy_storage_kernel(src_ptr, out_ptr, n_elements, BLOCK: tl.constexpr):
 
 @triton.jit
 def _inverse_kernel(
-    storage_ptr, src_ptr, out_ptr,
-    n_storage, rows, cols, target_offset, src_offset,
-    st0, st1, ss0, ss1,
-    ls0, ls1,
-    MODE: tl.constexpr, P2S0: tl.constexpr, P2S1: tl.constexpr,
-    CONTIG_SRC: tl.constexpr, BLOCK: tl.constexpr,
+    storage_ptr,
+    src_ptr,
+    out_ptr,
+    n_storage,
+    rows,
+    cols,
+    target_offset,
+    src_offset,
+    st0,
+    st1,
+    ss0,
+    ss1,
+    ls0,
+    ls1,
+    MODE: tl.constexpr,
+    P2S0: tl.constexpr,
+    P2S1: tl.constexpr,
+    CONTIG_SRC: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     # One pass over the output storage: out[p] = src[...] if p is covered by the
     # as-strided view, else storage[p]. MODE 0: t = c*st1 (1D / single row).
@@ -114,13 +127,21 @@ def _scatter0d_kernel(src_ptr, out_ptr, target_offset, src_offset):
 
 @triton.jit
 def _scatter1d_kernel(
-    src_ptr, out_ptr, n_elements, target_offset, src_offset,
-    st0, ss0,
-    CONTIG_SRC: tl.constexpr, BLOCK: tl.constexpr,
+    src_ptr,
+    out_ptr,
+    n_elements,
+    target_offset,
+    src_offset,
+    st0,
+    ss0,
+    CONTIG_SRC: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     offsets = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     mask = offsets < n_elements
-    target = tl.zeros([BLOCK], dtype=tl.int64) + target_offset + offsets.to(tl.int64) * st0
+    target = (
+        tl.zeros([BLOCK], dtype=tl.int64) + target_offset + offsets.to(tl.int64) * st0
+    )
     if CONTIG_SRC:
         v = tl.load(src_ptr + src_offset + offsets, mask=mask)
     else:
@@ -130,26 +151,51 @@ def _scatter1d_kernel(
 
 @triton.jit
 def _scatter2d_kernel(
-    src_ptr, out_ptr, rows, cols, target_offset, src_offset,
-    st0, st1, ss0, ss1,
-    CONTIG_SRC: tl.constexpr, BLOCK: tl.constexpr,
+    src_ptr,
+    out_ptr,
+    rows,
+    cols,
+    target_offset,
+    src_offset,
+    st0,
+    st1,
+    ss0,
+    ss1,
+    CONTIG_SRC: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     c = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     r = tl.program_id(1)
     cmask = c < cols
-    target = tl.zeros([BLOCK], dtype=tl.int64) + target_offset + r.to(tl.int64) * st0 + c.to(tl.int64) * st1
+    target = (
+        tl.zeros([BLOCK], dtype=tl.int64)
+        + target_offset
+        + r.to(tl.int64) * st0
+        + c.to(tl.int64) * st1
+    )
     if CONTIG_SRC:
         v = tl.load(src_ptr + src_offset + r * cols + c, mask=cmask)
     else:
-        v = tl.load(src_ptr + src_offset + r.to(tl.int64) * ss0 + c.to(tl.int64) * ss1, mask=cmask)
+        v = tl.load(
+            src_ptr + src_offset + r.to(tl.int64) * ss0 + c.to(tl.int64) * ss1,
+            mask=cmask,
+        )
     tl.store(out_ptr + target, v, mask=cmask)
 
 
 @triton.jit
 def _scatter_nd_kernel(
-    src_ptr, out_ptr, n_elements, target_offset, src_offset,
-    size_ptr, stride_ptr, src_stride_ptr,
-    NDIM: tl.constexpr, CONTIG_SRC: tl.constexpr, BLOCK: tl.constexpr,
+    src_ptr,
+    out_ptr,
+    n_elements,
+    target_offset,
+    src_offset,
+    size_ptr,
+    stride_ptr,
+    src_stride_ptr,
+    NDIM: tl.constexpr,
+    CONTIG_SRC: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     offsets = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     mask = offsets < n_elements
@@ -204,7 +250,9 @@ def as_strided_scatter(self, src, size, stride, storage_offset=None):
     size = [int(s) for s in size]
     stride = [int(s) for s in stride]
     ndim = len(size)
-    target_offset = self.storage_offset() if storage_offset is None else int(storage_offset)
+    target_offset = (
+        self.storage_offset() if storage_offset is None else int(storage_offset)
+    )
 
     storage_numel = self.untyped_storage().nbytes() // self.element_size()
     dev = self.device
@@ -216,7 +264,7 @@ def as_strided_scatter(self, src, size, stride, storage_offset=None):
 
     is_contiguous_view = ndim > 0
     for i in range(ndim):
-        if stride[i] != math.prod(size[i + 1:]):
+        if stride[i] != math.prod(size[i + 1 :]):
             is_contiguous_view = False
             break
     covers_storage = (
@@ -226,7 +274,10 @@ def as_strided_scatter(self, src, size, stride, storage_offset=None):
     if covers_storage:
         if expected_numel > 0:
             _copy_storage_kernel[(triton.cdiv(expected_numel, BLOCK),)](
-                src.reshape(-1), out_storage, expected_numel, BLOCK=BLOCK,
+                src.reshape(-1),
+                out_storage,
+                expected_numel,
+                BLOCK=BLOCK,
             )
     else:
         storage_view = torch.as_strided(self, (storage_numel,), (1,), 0)
@@ -242,15 +293,32 @@ def as_strided_scatter(self, src, size, stride, storage_offset=None):
                 ls0 = st0.bit_length() - 1 if p2s0 else 0
                 ls1 = st1.bit_length() - 1 if p2s1 else 0
                 _inverse_kernel[(triton.cdiv(storage_numel, BLOCK),)](
-                    storage_view, src, out_storage,
-                    storage_numel, rows, cols, target_offset, src_off,
-                    st0, st1, ss0, ss1, ls0, ls1,
-                    MODE=mode, P2S0=p2s0, P2S1=p2s1,
-                    CONTIG_SRC=contig_src, BLOCK=BLOCK,
+                    storage_view,
+                    src,
+                    out_storage,
+                    storage_numel,
+                    rows,
+                    cols,
+                    target_offset,
+                    src_off,
+                    st0,
+                    st1,
+                    ss0,
+                    ss1,
+                    ls0,
+                    ls1,
+                    MODE=mode,
+                    P2S0=p2s0,
+                    P2S1=p2s1,
+                    CONTIG_SRC=contig_src,
+                    BLOCK=BLOCK,
                 )
             else:
                 _copy_storage_kernel[(triton.cdiv(storage_numel, BLOCK),)](
-                    storage_view, out_storage, storage_numel, BLOCK=BLOCK,
+                    storage_view,
+                    out_storage,
+                    storage_numel,
+                    BLOCK=BLOCK,
                 )
                 contig_src = src.is_contiguous()
                 src_off = src.storage_offset()
@@ -258,28 +326,58 @@ def as_strided_scatter(self, src, size, stride, storage_offset=None):
                     _scatter0d_kernel[(1,)](src, out_storage, target_offset, src_off)
                 elif ndim == 1:
                     _scatter1d_kernel[(triton.cdiv(expected_numel, BLOCK),)](
-                        src, out_storage, expected_numel, target_offset, src_off,
-                        stride[0], src.stride()[0],
-                        CONTIG_SRC=contig_src, BLOCK=BLOCK,
+                        src,
+                        out_storage,
+                        expected_numel,
+                        target_offset,
+                        src_off,
+                        stride[0],
+                        src.stride()[0],
+                        CONTIG_SRC=contig_src,
+                        BLOCK=BLOCK,
                     )
                 elif ndim == 2 and size[0] <= 65535:
                     _scatter2d_kernel[(triton.cdiv(size[1], BLOCK), size[0])](
-                        src, out_storage, size[0], size[1], target_offset, src_off,
-                        stride[0], stride[1], src.stride()[0], src.stride()[1],
-                        CONTIG_SRC=contig_src, BLOCK=BLOCK,
+                        src,
+                        out_storage,
+                        size[0],
+                        size[1],
+                        target_offset,
+                        src_off,
+                        stride[0],
+                        stride[1],
+                        src.stride()[0],
+                        src.stride()[1],
+                        CONTIG_SRC=contig_src,
+                        BLOCK=BLOCK,
                     )
                 else:
                     size_t = torch.tensor(size, dtype=torch.int64, device=dev)
                     stride_t = torch.tensor(stride, dtype=torch.int64, device=dev)
-                    src_stride_t = torch.tensor(list(src.stride()), dtype=torch.int64, device=dev)
+                    src_stride_t = torch.tensor(
+                        list(src.stride()), dtype=torch.int64, device=dev
+                    )
                     _scatter_nd_kernel[(triton.cdiv(expected_numel, BLOCK),)](
-                        src, out_storage, expected_numel, target_offset, src_off,
-                        size_t, stride_t, src_stride_t,
-                        NDIM=ndim, CONTIG_SRC=contig_src, BLOCK=BLOCK,
+                        src,
+                        out_storage,
+                        expected_numel,
+                        target_offset,
+                        src_off,
+                        size_t,
+                        stride_t,
+                        src_stride_t,
+                        NDIM=ndim,
+                        CONTIG_SRC=contig_src,
+                        BLOCK=BLOCK,
                     )
         else:
             _copy_storage_kernel[(triton.cdiv(storage_numel, BLOCK),)](
-                storage_view, out_storage, storage_numel, BLOCK=BLOCK,
+                storage_view,
+                out_storage,
+                storage_numel,
+                BLOCK=BLOCK,
             )
 
-    return torch.as_strided(out_storage, self.size(), self.stride(), self.storage_offset())
+    return torch.as_strided(
+        out_storage, self.size(), self.stride(), self.storage_offset()
+    )

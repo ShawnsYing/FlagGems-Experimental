@@ -13,12 +13,9 @@
 # limitations under the License.
 
 import logging
-
 import torch
 import triton
-
 from flag_gems.runtime import torch_device_fn
-
 from .zeros import zeros_kernel
 
 logger = logging.getLogger(__name__)

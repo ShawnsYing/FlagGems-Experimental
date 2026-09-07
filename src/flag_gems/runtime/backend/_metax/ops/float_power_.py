@@ -14,11 +14,11 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
 
 
 _BLOCK = 1024
@@ -52,7 +52,12 @@ def _fast_pow32(x, e):
 
 @triton.jit
 def _float_power_tt_kernel(
-    a_ptr, e_ptr, n_elements, BLOCK: tl.constexpr, IS_FP64: tl.constexpr, FAST: tl.constexpr
+    a_ptr,
+    e_ptr,
+    n_elements,
+    BLOCK: tl.constexpr,
+    IS_FP64: tl.constexpr,
+    FAST: tl.constexpr,
 ):
     """In-place A = pow(A, exponent) elementwise (exponent is a same-shape tensor)."""
     pid = tl.program_id(0).to(tl.int64)
@@ -90,7 +95,12 @@ def _float_power_ts_kernel(
 
 @triton.jit
 def _float_power_t1_kernel(
-    a_ptr, e_ptr, n_elements, BLOCK: tl.constexpr, IS_FP64: tl.constexpr, FAST: tl.constexpr
+    a_ptr,
+    e_ptr,
+    n_elements,
+    BLOCK: tl.constexpr,
+    IS_FP64: tl.constexpr,
+    FAST: tl.constexpr,
 ):
     """In-place A = pow(A, exponent) with exponent a 1-element tensor (broadcast)."""
     pid = tl.program_id(0).to(tl.int64)
@@ -135,17 +145,31 @@ def float_power_tensor_scalar_(A, exponent):
     if isinstance(exponent, torch.Tensor):
         if exponent.numel() == 1:
             _float_power_t1_kernel[grid](
-                A, exponent, n, BLOCK=block, IS_FP64=is_fp64, FAST=fast,
+                A,
+                exponent,
+                n,
+                BLOCK=block,
+                IS_FP64=is_fp64,
+                FAST=fast,
                 num_warps=num_warps,
             )
         else:
             _float_power_tt_kernel[grid](
-                A, exponent, n, BLOCK=block, IS_FP64=is_fp64, FAST=fast,
+                A,
+                exponent,
+                n,
+                BLOCK=block,
+                IS_FP64=is_fp64,
+                FAST=fast,
                 num_warps=num_warps,
             )
     else:
         _float_power_ts_kernel[grid](
-            A, float(exponent), n, BLOCK=block, IS_FP64=is_fp64,
+            A,
+            float(exponent),
+            n,
+            BLOCK=block,
+            IS_FP64=is_fp64,
             num_warps=num_warps,
         )
     return A

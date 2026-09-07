@@ -14,11 +14,11 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
 
 
 def _triple(v):
@@ -65,14 +65,32 @@ def _cast_f32_to_lowp(
 
 @triton.jit
 def _maxpool3d_bwd_gather(
-    grad_output_ptr, indices_ptr, out_ptr,
-    plane_size_out, plane_size_in,
-    pD, pH, pW, sD, sH, sW, dilD, dilH, dilW,
-    kDm1_dilD, kHm1_dilH, kWm1_dilW,
-    H_in: tl.constexpr, W_in: tl.constexpr,
-    D_out: tl.constexpr, H_out: tl.constexpr, W_out: tl.constexpr,
+    grad_output_ptr,
+    indices_ptr,
+    out_ptr,
+    plane_size_out,
+    plane_size_in,
+    pD,
+    pH,
+    pW,
+    sD,
+    sH,
+    sW,
+    dilD,
+    dilH,
+    dilW,
+    kDm1_dilD,
+    kHm1_dilH,
+    kWm1_dilW,
+    H_in: tl.constexpr,
+    W_in: tl.constexpr,
+    D_out: tl.constexpr,
+    H_out: tl.constexpr,
+    W_out: tl.constexpr,
     DIL_ANY: tl.constexpr,
-    Q_D: tl.constexpr, Q_H: tl.constexpr, Q_W: tl.constexpr,
+    Q_D: tl.constexpr,
+    Q_H: tl.constexpr,
+    Q_W: tl.constexpr,
     BLOCK: tl.constexpr,
 ):
     pid0 = tl.program_id(0)
@@ -122,9 +140,9 @@ def _maxpool3d_bwd_gather(
                 ow = ow_min + qw
                 valid = mask_pos & (oh <= oh_max) & (ow <= ow_max)
                 if DIL_ANY:
-                    valid &= ((d + pD - od * sD) % dilD == 0)
-                    valid &= ((h + pH - oh * sH) % dilH == 0)
-                    valid &= ((w + pW - ow * sW) % dilW == 0)
+                    valid &= (d + pD - od * sD) % dilD == 0
+                    valid &= (h + pH - oh * sH) % dilH == 0
+                    valid &= (w + pW - ow * sW) % dilW == 0
                 addr = tl.minimum(tl.maximum(row + qw, base), clamp_hi)
                 idx = tl.load(indices_ptr + addr)
                 g = tl.load(grad_output_ptr + addr)
@@ -133,7 +151,9 @@ def _maxpool3d_bwd_gather(
     tl.store(out_ptr + (base_in + f).to(tl.int64), acc, mask=mask_pos)
 
 
-def max_pool3d_with_indices_backward(grad_output, self, kernel_size, stride, padding, dilation, ceil_mode, indices):
+def max_pool3d_with_indices_backward(
+    grad_output, self, kernel_size, stride, padding, dilation, ceil_mode, indices
+):
     k = _triple(kernel_size)
     s = _triple(stride)
     p = _triple(padding)
@@ -159,8 +179,11 @@ def max_pool3d_with_indices_backward(grad_output, self, kernel_size, stride, pad
         if grad_output.dtype == torch.float32:
             grad_input = torch.zeros_like(self)
             _maxpool3d_bwd_scatter[grid](
-                grad_output, indices, grad_input,
-                plane_size_out, plane_size_in,
+                grad_output,
+                indices,
+                grad_input,
+                plane_size_out,
+                plane_size_in,
                 BLOCK=BLOCK,
                 num_warps=4,
             )
@@ -168,14 +191,19 @@ def max_pool3d_with_indices_backward(grad_output, self, kernel_size, stride, pad
         else:
             acc = torch.zeros(self.shape, dtype=torch.float32, device=self.device)
             _maxpool3d_bwd_scatter[grid](
-                grad_output, indices, acc,
-                plane_size_out, plane_size_in,
+                grad_output,
+                indices,
+                acc,
+                plane_size_out,
+                plane_size_in,
                 BLOCK=BLOCK,
                 num_warps=4,
             )
             grad_input = torch.empty_like(self)
             _cast_f32_to_lowp[(triton.cdiv(self.numel(), BLOCK),)](
-                acc, grad_input, self.numel(),
+                acc,
+                grad_input,
+                self.numel(),
                 BLOCK=BLOCK,
                 num_warps=4,
             )
@@ -191,14 +219,32 @@ def max_pool3d_with_indices_backward(grad_output, self, kernel_size, stride, pad
     BLOCK = 64
     grid = (triton.cdiv(H_in * W_in, BLOCK), D_in, n_planes)
     _maxpool3d_bwd_gather[grid](
-        grad_output, indices, out,
-        plane_size_out, plane_size_in,
-        p[0], p[1], p[2], s[0], s[1], s[2], dil[0], dil[1], dil[2],
-        dil[0] * (k[0] - 1), dil[1] * (k[1] - 1), dil[2] * (k[2] - 1),
-        H_in=H_in, W_in=W_in,
-        D_out=D_out, H_out=H_out, W_out=W_out,
+        grad_output,
+        indices,
+        out,
+        plane_size_out,
+        plane_size_in,
+        p[0],
+        p[1],
+        p[2],
+        s[0],
+        s[1],
+        s[2],
+        dil[0],
+        dil[1],
+        dil[2],
+        dil[0] * (k[0] - 1),
+        dil[1] * (k[1] - 1),
+        dil[2] * (k[2] - 1),
+        H_in=H_in,
+        W_in=W_in,
+        D_out=D_out,
+        H_out=H_out,
+        W_out=W_out,
         DIL_ANY=(dil[0] > 1 or dil[1] > 1 or dil[2] > 1),
-        Q_D=Q_D, Q_H=Q_H, Q_W=Q_W,
+        Q_D=Q_D,
+        Q_H=Q_H,
+        Q_W=Q_W,
         BLOCK=BLOCK,
         num_warps=1,
     )

@@ -14,14 +14,13 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _y0_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
@@ -82,7 +81,12 @@ def _y0_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
     b2 = b1
     b1 = b0
     Gv = -2.1714875401812606e-05 + zv * b1 - b2
-    J0 = (z - 5.783185958862305) * (z - 30.471261978149414) * (z - 74.88700866699219) * Gv
+    J0 = (
+        (z - 5.783185958862305)
+        * (z - 30.471261978149414)
+        * (z - 74.88700866699219)
+        * Gv
+    )
 
     # ---- R(x) = Y0(x) - (2/pi) ln(x/2) J0(x), Chebyshev in x (x in [0, 11.5]) ----
     xn = x * 0.17391304671764374 - 1.0

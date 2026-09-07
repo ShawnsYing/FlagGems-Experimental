@@ -13,9 +13,7 @@
 # limitations under the License.
 
 import logging
-
 import torch
-
 from .full import check_dtype, full_
 
 logger = logging.getLogger(__name__)

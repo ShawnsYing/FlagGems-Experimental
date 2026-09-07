@@ -14,19 +14,23 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _tri_inv_col_kernel(
-    L_ptr, X_ptr,
+    L_ptr,
+    X_ptr,
     n,
-    L_s0, L_s1, L_s2,
-    X_s0, X_s1, X_s2,
+    L_s0,
+    L_s1,
+    L_s2,
+    X_s0,
+    X_s1,
+    X_s2,
     UPPER: tl.constexpr,
     N_PAD: tl.constexpr,
     DT: tl.constexpr,
@@ -34,8 +38,8 @@ def _tri_inv_col_kernel(
     # Column-parallel forward substitution (one CTA per matrix column).
     # Column k of X = M^{-1} solves M x = e_k:
     #   x[k] = 1/M[k,k];  x[i] = -(1/M[i,i]) * sum_{j=k}^{i-1} M[i,j] x[j]
-    pid = tl.program_id(0)   # column k
-    b = tl.program_id(1)     # batch
+    pid = tl.program_id(0)  # column k
+    b = tl.program_id(1)  # batch
     k = pid
     rows = tl.arange(0, N_PAD)
     cols = tl.arange(0, N_PAD)
@@ -61,10 +65,15 @@ def _tri_inv_col_kernel(
 
 @triton.jit
 def _tri_inv_col2_kernel(
-    L_ptr, X_ptr,
+    L_ptr,
+    X_ptr,
     n,
-    L_s0, L_s1, L_s2,
-    X_s0, X_s1, X_s2,
+    L_s0,
+    L_s1,
+    L_s2,
+    X_s0,
+    X_s1,
+    X_s2,
     UPPER: tl.constexpr,
     N_PAD: tl.constexpr,
     G: tl.constexpr,
@@ -98,15 +107,24 @@ def _tri_inv_col2_kernel(
         upd = tl.where(rows[None, :] == i, -S[:, None] / d_i, 0.0)
         active_g = gs < (i - k0)
         xs = tl.where((rows[None, :] == i) & active_g[:, None], upd, xs)
-    tl.store(xbase + (k0 + gs)[:, None] * X_s2 + rows[None, :] * X_s1, xs, mask=rows[None, :] < n)
+    tl.store(
+        xbase + (k0 + gs)[:, None] * X_s2 + rows[None, :] * X_s1,
+        xs,
+        mask=rows[None, :] < n,
+    )
 
 
 @triton.jit
 def _blk_diag_kernel(
-    L_ptr, X_ptr,
+    L_ptr,
+    X_ptr,
     n,
-    L_s0, L_s1, L_s2,
-    X_s0, X_s1, X_s2,
+    L_s0,
+    L_s1,
+    L_s2,
+    X_s0,
+    X_s1,
+    X_s2,
     UPPER: tl.constexpr,
     T: tl.constexpr,
     DT: tl.constexpr,
@@ -124,27 +142,42 @@ def _blk_diag_kernel(
     Xb = tl.zeros([T, T], dtype=DT)
     for r in range(0, T):
         if UPPER:
-            mrow = tl.load(lbase + (i * T + cols) * L_s1 + (i * T + r) * L_s2,
-                           mask=cols < T, other=0.0)
+            mrow = tl.load(
+                lbase + (i * T + cols) * L_s1 + (i * T + r) * L_s2,
+                mask=cols < T,
+                other=0.0,
+            )
         else:
-            mrow = tl.load(lbase + (i * T + r) * L_s1 + (i * T + cols) * L_s2,
-                           mask=cols < T, other=0.0)
+            mrow = tl.load(
+                lbase + (i * T + r) * L_s1 + (i * T + cols) * L_s2,
+                mask=cols < T,
+                other=0.0,
+            )
         d = tl.load(lbase + (i * T + r) * L_s1 + (i * T + r) * L_s2)
         S = tl.sum(mrow[:, None] * Xb, axis=0)
         xr = (tl.where(cols == r, 1.0, 0.0) - S) / d
         Xb = tl.where(rows[:, None] == r, xr[None, :], Xb)
-    tl.store(xbase + (i * T + rows)[:, None] * X_s1 + (i * T + cols)[None, :] * X_s2, Xb)
+    tl.store(
+        xbase + (i * T + rows)[:, None] * X_s1 + (i * T + cols)[None, :] * X_s2, Xb
+    )
     Z = tl.zeros([T, T], dtype=DT)
     for j in range(i + 1, m):
-        tl.store(xbase + (i * T + rows)[:, None] * X_s1 + (j * T + cols)[None, :] * X_s2, Z)
+        tl.store(
+            xbase + (i * T + rows)[:, None] * X_s1 + (j * T + cols)[None, :] * X_s2, Z
+        )
 
 
 @triton.jit
 def _blk_col_kernel(
-    L_ptr, X_ptr,
+    L_ptr,
+    X_ptr,
     n,
-    L_s0, L_s1, L_s2,
-    X_s0, X_s1, X_s2,
+    L_s0,
+    L_s1,
+    L_s2,
+    X_s0,
+    X_s1,
+    X_s2,
     UPPER: tl.constexpr,
     T: tl.constexpr,
     KC: tl.constexpr,
@@ -165,25 +198,49 @@ def _blk_col_kernel(
         for j in range(k, i):
             for kc in range(0, T, KC):
                 if UPPER:
-                    mch = tl.load(lbase + (j * T + kc + kkc)[None, :] * L_s1 + (i * T + rows)[:, None] * L_s2,
-                                  mask=(kc + kkc)[None, :] < T, other=0.0)
+                    mch = tl.load(
+                        lbase
+                        + (j * T + kc + kkc)[None, :] * L_s1
+                        + (i * T + rows)[:, None] * L_s2,
+                        mask=(kc + kkc)[None, :] < T,
+                        other=0.0,
+                    )
                 else:
-                    mch = tl.load(lbase + (i * T + rows)[:, None] * L_s1 + (j * T + kc + kkc)[None, :] * L_s2,
-                                  mask=(kc + kkc)[None, :] < T, other=0.0)
-                xch = tl.load(xbase + (j * T + kc + kkc)[:, None] * X_s1 + (k * T + cols)[None, :] * X_s2,
-                              mask=(kc + kkc)[:, None] < T, other=0.0)
+                    mch = tl.load(
+                        lbase
+                        + (i * T + rows)[:, None] * L_s1
+                        + (j * T + kc + kkc)[None, :] * L_s2,
+                        mask=(kc + kkc)[None, :] < T,
+                        other=0.0,
+                    )
+                xch = tl.load(
+                    xbase
+                    + (j * T + kc + kkc)[:, None] * X_s1
+                    + (k * T + cols)[None, :] * X_s2,
+                    mask=(kc + kkc)[:, None] < T,
+                    other=0.0,
+                )
                 S += tl.sum(mch[:, :, None] * xch[None, :, :], axis=1)
-        D = tl.load(xbase + (i * T + rows)[:, None] * X_s1 + (i * T + cols)[None, :] * X_s2)
+        D = tl.load(
+            xbase + (i * T + rows)[:, None] * X_s1 + (i * T + cols)[None, :] * X_s2
+        )
         Xik = -tl.sum(D[:, :, None] * S[None, :, :], axis=1)
-        tl.store(xbase + (i * T + rows)[:, None] * X_s1 + (k * T + cols)[None, :] * X_s2, Xik)
+        tl.store(
+            xbase + (i * T + rows)[:, None] * X_s1 + (k * T + cols)[None, :] * X_s2, Xik
+        )
 
 
 @triton.jit
 def _xtx_kernel(
-    X_ptr, out_ptr,
+    X_ptr,
+    out_ptr,
     n,
-    X_s0, X_s1, X_s2,
-    O_s0, O_s1, O_s2,
+    X_s0,
+    X_s1,
+    X_s2,
+    O_s0,
+    O_s1,
+    O_s2,
     KC: tl.constexpr,
     BLOCK: tl.constexpr,
     DT: tl.constexpr,
@@ -204,21 +261,35 @@ def _xtx_kernel(
     xbase = X_ptr + b * X_s0
     acc = tl.zeros([BLOCK, BLOCK], dtype=DT)
     for k0 in range(kstart, n, KC):
-        a = tl.load(xbase + (k0 + kk)[:, None] * X_s1 + rows[None, :] * X_s2,
-                    mask=((k0 + kk)[:, None] < n) & (rows[None, :] < n), other=0.0)
-        c = tl.load(xbase + (k0 + kk)[:, None] * X_s1 + cols[None, :] * X_s2,
-                    mask=((k0 + kk)[:, None] < n) & (cols[None, :] < n), other=0.0)
+        a = tl.load(
+            xbase + (k0 + kk)[:, None] * X_s1 + rows[None, :] * X_s2,
+            mask=((k0 + kk)[:, None] < n) & (rows[None, :] < n),
+            other=0.0,
+        )
+        c = tl.load(
+            xbase + (k0 + kk)[:, None] * X_s1 + cols[None, :] * X_s2,
+            mask=((k0 + kk)[:, None] < n) & (cols[None, :] < n),
+            other=0.0,
+        )
         acc += tl.sum(a[:, :, None] * c[:, None, :], axis=0)
-    tl.store(out_ptr + b * O_s0 + rows[:, None] * O_s1 + cols[None, :] * O_s2, acc,
-             mask=(rows[:, None] < n) & (cols[None, :] < n))
+    tl.store(
+        out_ptr + b * O_s0 + rows[:, None] * O_s1 + cols[None, :] * O_s2,
+        acc,
+        mask=(rows[:, None] < n) & (cols[None, :] < n),
+    )
 
 
 @triton.jit
 def _fused_kernel(
-    L_ptr, out_ptr,
+    L_ptr,
+    out_ptr,
     n,
-    L_s0, L_s1, L_s2,
-    O_s0, O_s1, O_s2,
+    L_s0,
+    L_s1,
+    L_s2,
+    O_s0,
+    O_s1,
+    O_s2,
     UPPER: tl.constexpr,
     N_PAD: tl.constexpr,
     DT: tl.constexpr,
@@ -243,8 +314,11 @@ def _fused_kernel(
         xrow = (tl.where(cols == i, 1.0, 0.0) - S) / d
         X = tl.where(rows[:, None] == i, xrow[None, :], X)
         acc += xrow[:, None] * xrow[None, :]
-    tl.store(obase + rows[:, None] * O_s1 + cols[None, :] * O_s2, acc,
-             mask=(rows[:, None] < n) & (cols[None, :] < n))
+    tl.store(
+        obase + rows[:, None] * O_s1 + cols[None, :] * O_s2,
+        acc,
+        mask=(rows[:, None] < n) & (cols[None, :] < n),
+    )
 
 
 def cholesky_inverse(L, upper=False):
@@ -276,8 +350,21 @@ def cholesky_inverse(L, upper=False):
 
     if n <= 16:
         N_PAD = max(16, triton.next_power_of_2(n))
-        _fused_kernel[(batch,)](L, out, n, ls0, ls1, ls2, os0, os1, os2,
-                                UPPER=bool(upper), N_PAD=N_PAD, DT=tl_dt, num_warps=1)
+        _fused_kernel[(batch,)](
+            L,
+            out,
+            n,
+            ls0,
+            ls1,
+            ls2,
+            os0,
+            os1,
+            os2,
+            UPPER=bool(upper),
+            N_PAD=N_PAD,
+            DT=tl_dt,
+            num_warps=1,
+        )
         return out
 
     X = torch.empty((batch, n, n), dtype=dt, device=dev)
@@ -285,18 +372,71 @@ def cholesky_inverse(L, upper=False):
 
     if n <= 32 or dt == torch.float64 or n % 16 != 0:
         N_PAD = max(16, triton.next_power_of_2(n))
-        _tri_inv_col_kernel[(n, batch)](L, X, n, ls0, ls1, ls2, xs[0], xs[1], xs[2],
-                                        UPPER=bool(upper), N_PAD=N_PAD, DT=tl_dt, num_warps=1)
+        _tri_inv_col_kernel[(n, batch)](
+            L,
+            X,
+            n,
+            ls0,
+            ls1,
+            ls2,
+            xs[0],
+            xs[1],
+            xs[2],
+            UPPER=bool(upper),
+            N_PAD=N_PAD,
+            DT=tl_dt,
+            num_warps=1,
+        )
     else:
         T = 16
         m = n // T
-        _blk_diag_kernel[(m, batch)](L, X, n, ls0, ls1, ls2, xs[0], xs[1], xs[2],
-                                     UPPER=bool(upper), T=T, DT=tl_dt, num_warps=4)
-        _blk_col_kernel[(m, batch)](L, X, n, ls0, ls1, ls2, xs[0], xs[1], xs[2],
-                                    UPPER=bool(upper), T=T, KC=16, DT=tl_dt, num_warps=4)
+        _blk_diag_kernel[(m, batch)](
+            L,
+            X,
+            n,
+            ls0,
+            ls1,
+            ls2,
+            xs[0],
+            xs[1],
+            xs[2],
+            UPPER=bool(upper),
+            T=T,
+            DT=tl_dt,
+            num_warps=4,
+        )
+        _blk_col_kernel[(m, batch)](
+            L,
+            X,
+            n,
+            ls0,
+            ls1,
+            ls2,
+            xs[0],
+            xs[1],
+            xs[2],
+            UPPER=bool(upper),
+            T=T,
+            KC=16,
+            DT=tl_dt,
+            num_warps=4,
+        )
 
     BLOCK, KC = 16, 16
     grid = (triton.cdiv(n, BLOCK) * triton.cdiv(n, BLOCK), batch)
-    _xtx_kernel[grid](X, out, n, xs[0], xs[1], xs[2], os0, os1, os2,
-                      KC=KC, BLOCK=BLOCK, DT=tl_dt, num_warps=4)
+    _xtx_kernel[grid](
+        X,
+        out,
+        n,
+        xs[0],
+        xs[1],
+        xs[2],
+        os0,
+        os1,
+        os2,
+        KC=KC,
+        BLOCK=BLOCK,
+        DT=tl_dt,
+        num_warps=4,
+    )
     return out

@@ -14,14 +14,13 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _copy_kernel(inp_ptr, out_ptr, numel, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
@@ -32,10 +31,18 @@ def _copy_kernel(inp_ptr, out_ptr, numel, BLOCK: tl.constexpr):
 
 @triton.jit
 def _scatter_accumulate_kernel(
-    mask_ptr, values_ptr, out_ptr,
-    idx0_ptr, idx1_ptr, idx2_ptr,
-    numel, s0, s1, s2,
-    RANK: tl.constexpr, BLOCK: tl.constexpr,
+    mask_ptr,
+    values_ptr,
+    out_ptr,
+    idx0_ptr,
+    idx1_ptr,
+    idx2_ptr,
+    numel,
+    s0,
+    s1,
+    s2,
+    RANK: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
@@ -79,18 +86,51 @@ def _unsafe_masked_index_put_accumulate(inp, mask, indices, values):
     grid = (triton.cdiv(numel, BLOCK),)
     if rank == 1:
         _scatter_accumulate_kernel[grid](
-            mask, values, dst, indices[0], mask, mask,
-            numel, st[0], 0, 0, RANK=1, BLOCK=BLOCK, num_warps=4,
+            mask,
+            values,
+            dst,
+            indices[0],
+            mask,
+            mask,
+            numel,
+            st[0],
+            0,
+            0,
+            RANK=1,
+            BLOCK=BLOCK,
+            num_warps=4,
         )
     elif rank == 2:
         _scatter_accumulate_kernel[grid](
-            mask, values, dst, indices[0], indices[1], mask,
-            numel, st[0], st[1], 0, RANK=2, BLOCK=BLOCK, num_warps=4,
+            mask,
+            values,
+            dst,
+            indices[0],
+            indices[1],
+            mask,
+            numel,
+            st[0],
+            st[1],
+            0,
+            RANK=2,
+            BLOCK=BLOCK,
+            num_warps=4,
         )
     elif rank == 3:
         _scatter_accumulate_kernel[grid](
-            mask, values, dst, indices[0], indices[1], indices[2],
-            numel, st[0], st[1], st[2], RANK=3, BLOCK=BLOCK, num_warps=4,
+            mask,
+            values,
+            dst,
+            indices[0],
+            indices[1],
+            indices[2],
+            numel,
+            st[0],
+            st[1],
+            st[2],
+            RANK=3,
+            BLOCK=BLOCK,
+            num_warps=4,
         )
     else:
         raise NotImplementedError(

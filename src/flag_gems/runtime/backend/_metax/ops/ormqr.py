@@ -14,21 +14,32 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _ormqr_apply_kernel(
-    input_ptr, tau_ptr, other_ptr, out_ptr,
-    m, n, k, k2,
-    input_batch_stride, tau_batch_stride,
-    input_row_stride, input_col_stride,
-    other_batch_stride, other_row_stride, other_col_stride,
-    out_batch_stride, out_row_stride, out_col_stride,
+    input_ptr,
+    tau_ptr,
+    other_ptr,
+    out_ptr,
+    m,
+    n,
+    k,
+    k2,
+    input_batch_stride,
+    tau_batch_stride,
+    input_row_stride,
+    input_col_stride,
+    other_batch_stride,
+    other_row_stride,
+    other_col_stride,
+    out_batch_stride,
+    out_row_stride,
+    out_col_stride,
     FORWARD: tl.constexpr,
     TRANSPOSED: tl.constexpr,
     M_BLOCK: tl.constexpr,
@@ -66,8 +77,11 @@ def _ormqr_apply_kernel(
         tile = tl.load(ot_base + offs, mask=tmask, other=0.0)
         for ii in tl.range(0, k):
             i = ii if FORWARD else (k - 1 - ii)
-            v = tl.load(in_base + rows * input_row_stride + i * input_col_stride,
-                        mask=(rows > i) & row_mask, other=0.0)
+            v = tl.load(
+                in_base + rows * input_row_stride + i * input_col_stride,
+                mask=(rows > i) & row_mask,
+                other=0.0,
+            )
             v = tl.where(rows == i, 1.0, v)
             s = tl.sum(v[None, :] * tile, axis=1)
             tau_i = tl.load(ta_base + i)
@@ -79,8 +93,11 @@ def _ormqr_apply_kernel(
         tile = tl.load(ot_base + offs, mask=tmask, other=0.0)
         for ii in tl.range(0, k):
             i = ii if FORWARD else (k - 1 - ii)
-            v = tl.load(in_base + rows * input_row_stride + i * input_col_stride,
-                        mask=(rows > i) & row_mask, other=0.0)
+            v = tl.load(
+                in_base + rows * input_row_stride + i * input_col_stride,
+                mask=(rows > i) & row_mask,
+                other=0.0,
+            )
             v = tl.where(rows == i, 1.0, v)
             s = tl.sum(v[:, None] * tile, axis=0)
             tau_i = tl.load(ta_base + i)
@@ -141,14 +158,24 @@ def _launch(input, tau, other, out, m, n, k, k2, forward, transposed, batch):
     else:
         num_warps = 8 if tile_elems > 4096 else 4
     _ormqr_apply_kernel[grid](
-        input, tau, other, out,
-        m, n, k, k2,
-        m * n, k,
-        input.stride(-2), input.stride(-1),
+        input,
+        tau,
+        other,
+        out,
+        m,
+        n,
+        k,
+        k2,
+        m * n,
+        k,
+        input.stride(-2),
+        input.stride(-1),
         other.stride(0) if other.ndim == 3 else m * k2,
-        other.stride(-2), other.stride(-1),
+        other.stride(-2),
+        other.stride(-1),
         out.stride(0) if out.ndim == 3 else m * k2,
-        out.stride(-2), out.stride(-1),
+        out.stride(-2),
+        out.stride(-1),
         FORWARD=forward,
         TRANSPOSED=transposed,
         M_BLOCK=M_BLOCK,

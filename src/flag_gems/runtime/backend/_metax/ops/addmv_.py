@@ -14,19 +14,25 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
 
-@triton.jit
+
 def _addmv_kernel(
-    self_ptr, mat_ptr, vec_ptr,
-    M, N,
-    self_stride, mat_m_stride, mat_n_stride, vec_stride,
-    beta, alpha,
+    self_ptr,
+    mat_ptr,
+    vec_ptr,
+    M,
+    N,
+    self_stride,
+    mat_m_stride,
+    mat_n_stride,
+    vec_stride,
+    beta,
+    alpha,
     ACC_DTYPE: tl.constexpr,
     OUT_DTYPE: tl.constexpr,
     EVEN_M: tl.constexpr,
@@ -83,7 +89,9 @@ def _addmv_kernel(
         if EVEN_M:
             s = tl.load(self_ptr + rows * self_stride).to(ACC_DTYPE)
         else:
-            s = tl.load(self_ptr + rows * self_stride, mask=rows < M, other=0.0).to(ACC_DTYPE)
+            s = tl.load(self_ptr + rows * self_stride, mask=rows < M, other=0.0).to(
+                ACC_DTYPE
+            )
         s = s * beta
     # single rounding to the output dtype (torch opmath semantics)
     out = (r + s).to(OUT_DTYPE)
@@ -95,10 +103,14 @@ def _addmv_kernel(
 
 @triton.jit
 def _addmv_n1_kernel(
-    self_ptr, mat_ptr, vec_ptr,
+    self_ptr,
+    mat_ptr,
+    vec_ptr,
     M,
-    self_stride, mat_m_stride,
-    beta, alpha,
+    self_stride,
+    mat_m_stride,
+    beta,
+    alpha,
     OUT_DTYPE: tl.constexpr,
     BLOCK: tl.constexpr,
 ):
@@ -166,25 +178,43 @@ def addmv_(self, mat, vec, *, beta=1, alpha=1):
         BLOCK = 1024
         grid = (triton.cdiv(M, BLOCK),)
         _addmv_n1_kernel[grid](
-            self, mat, vec, M,
-            self.stride(0), mat.stride(0),
-            beta, alpha, out_dtype, BLOCK,
+            self,
+            mat,
+            vec,
+            M,
+            self.stride(0),
+            mat.stride(0),
+            beta,
+            alpha,
+            out_dtype,
+            BLOCK,
             num_warps=4,
         )
         return self
 
     BLOCK_M, BLOCK_N, num_warps, num_stages = _pick_config(M, N, self.dtype)
     even_m = (M % BLOCK_M == 0) and (M >= BLOCK_M)
-    even_n = (N % BLOCK_N == 0)
+    even_n = N % BLOCK_N == 0
     grid = (triton.cdiv(M, BLOCK_M),)
     _addmv_kernel[grid](
-        self, mat, vec, M, N,
-        self.stride(0), mat.stride(0), mat.stride(1), vec.stride(0),
-        beta, alpha,
-        acc_dtype, out_dtype,
-        even_m, even_n,
+        self,
+        mat,
+        vec,
+        M,
+        N,
+        self.stride(0),
+        mat.stride(0),
+        mat.stride(1),
+        vec.stride(0),
+        beta,
+        alpha,
+        acc_dtype,
+        out_dtype,
+        even_m,
+        even_n,
         even_m and even_n,  # MAT_CG: mat is read exactly once, .cg keeps L1 free
-        BLOCK_M, BLOCK_N,
+        BLOCK_M,
+        BLOCK_N,
         num_warps=num_warps,
         num_stages=num_stages,
     )

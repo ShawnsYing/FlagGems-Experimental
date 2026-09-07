@@ -16,11 +16,9 @@ import functools
 import logging
 import math
 import os
-
 import torch
 import triton
 import triton.language as tl
-
 from flag_gems import runtime
 from flag_gems.runtime import torch_device_fn
 from flag_gems.utils import libentry, libtuner
@@ -28,6 +26,8 @@ from flag_gems.utils import triton_lang_extension as ext
 from flag_gems.utils.device_info import get_l2_cache_size, get_sm_count
 
 logger = logging.getLogger(__name__)
+
+
 EXPAND_CONFIG_FILENAME = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "mm_metax_expand.yaml")
 )

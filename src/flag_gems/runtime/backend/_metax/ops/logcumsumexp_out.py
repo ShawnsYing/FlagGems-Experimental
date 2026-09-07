@@ -14,11 +14,12 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
 
 _TL_DT = {
     torch.float32: tl.float32,
@@ -45,11 +46,18 @@ def _lce_add(a, b):
 # offsets = row*ROW_STRIDE + (p0 + arange(BLOCK_P))*STRIDE_P + (c0 + arange(CHUNK_C))*STRIDE_SCAN
 @triton.jit
 def _lce_single(
-    x_ptr, o_ptr,
-    C, P,
-    ROW_STRIDE, STRIDE_P, STRIDE_SCAN,
-    CHUNK_C: tl.constexpr, BLOCK_P: tl.constexpr,
-    OUT_DT: tl.constexpr, IN_DT: tl.constexpr, NO_MASK: tl.constexpr,
+    x_ptr,
+    o_ptr,
+    C,
+    P,
+    ROW_STRIDE,
+    STRIDE_P,
+    STRIDE_SCAN,
+    CHUNK_C: tl.constexpr,
+    BLOCK_P: tl.constexpr,
+    OUT_DT: tl.constexpr,
+    IN_DT: tl.constexpr,
+    NO_MASK: tl.constexpr,
 ):
     pid_p = tl.program_id(0)
     row = tl.program_id(1)
@@ -69,12 +77,20 @@ def _lce_single(
             s_elem = tl.full([CHUNK_C, BLOCK_P], 1.0, dtype=tl.float32)
         else:
             ok = (cc < C)[:, None] & p_mask[None, :]
-            x = tl.load(x_ptr + ptrs, mask=ok, other=float("-inf")).to(IN_DT).to(tl.float32)
+            x = (
+                tl.load(x_ptr + ptrs, mask=ok, other=float("-inf"))
+                .to(IN_DT)
+                .to(tl.float32)
+            )
             m_elem = tl.where(ok, x, float("-inf"))
             s_elem = tl.where(ok, 1.0, 0.0)
-        scan_m, scan_s = tl.associative_scan((m_elem, s_elem), axis=0, combine_fn=_lce_combine)
+        scan_m, scan_s = tl.associative_scan(
+            (m_elem, s_elem), axis=0, combine_fn=_lce_combine
+        )
         M = tl.maximum(m_carry[None, :], scan_m)
-        S = s_carry[None, :] * tl.exp(m_carry[None, :] - M) + scan_s * tl.exp(scan_m - M)
+        S = s_carry[None, :] * tl.exp(m_carry[None, :] - M) + scan_s * tl.exp(
+            scan_m - M
+        )
         if NO_MASK:
             tl.store(o_ptr + ptrs, (M + tl.log(S)).to(OUT_DT))
         else:
@@ -87,11 +103,18 @@ def _lce_single(
 # single-chunk variant with no carry chain: only valid when C <= CHUNK_C
 @triton.jit
 def _lce_single_nc(
-    x_ptr, o_ptr,
-    C, P,
-    ROW_STRIDE, STRIDE_P, STRIDE_SCAN,
-    CHUNK_C: tl.constexpr, BLOCK_P: tl.constexpr,
-    OUT_DT: tl.constexpr, IN_DT: tl.constexpr, NO_MASK: tl.constexpr,
+    x_ptr,
+    o_ptr,
+    C,
+    P,
+    ROW_STRIDE,
+    STRIDE_P,
+    STRIDE_SCAN,
+    CHUNK_C: tl.constexpr,
+    BLOCK_P: tl.constexpr,
+    OUT_DT: tl.constexpr,
+    IN_DT: tl.constexpr,
+    NO_MASK: tl.constexpr,
 ):
     pid_p = tl.program_id(0)
     row = tl.program_id(1)
@@ -110,7 +133,9 @@ def _lce_single_nc(
         x = tl.load(x_ptr + ptrs, mask=ok, other=float("-inf")).to(IN_DT).to(tl.float32)
         m_elem = tl.where(ok, x, float("-inf"))
         s_elem = tl.where(ok, 1.0, 0.0)
-    scan_m, scan_s = tl.associative_scan((m_elem, s_elem), axis=0, combine_fn=_lce_combine)
+    scan_m, scan_s = tl.associative_scan(
+        (m_elem, s_elem), axis=0, combine_fn=_lce_combine
+    )
     if NO_MASK:
         tl.store(o_ptr + ptrs, (scan_m + tl.log(scan_s)).to(OUT_DT))
     else:
@@ -120,11 +145,18 @@ def _lce_single_nc(
 # additive-scan carry kernel: per-chunk max reduction, exp normalization, pure-add scan
 @triton.jit
 def _lce_single_add(
-    x_ptr, o_ptr,
-    C, P,
-    ROW_STRIDE, STRIDE_P, STRIDE_SCAN,
-    CHUNK_C: tl.constexpr, BLOCK_P: tl.constexpr,
-    OUT_DT: tl.constexpr, IN_DT: tl.constexpr, NO_MASK: tl.constexpr,
+    x_ptr,
+    o_ptr,
+    C,
+    P,
+    ROW_STRIDE,
+    STRIDE_P,
+    STRIDE_SCAN,
+    CHUNK_C: tl.constexpr,
+    BLOCK_P: tl.constexpr,
+    OUT_DT: tl.constexpr,
+    IN_DT: tl.constexpr,
+    NO_MASK: tl.constexpr,
 ):
     pid_p = tl.program_id(0)
     row = tl.program_id(1)
@@ -142,14 +174,20 @@ def _lce_single_add(
             x = tl.load(x_ptr + ptrs).to(IN_DT).to(tl.float32)
         else:
             ok = (cc < C)[:, None] & p_mask[None, :]
-            x = tl.load(x_ptr + ptrs, mask=ok, other=float("-inf")).to(IN_DT).to(tl.float32)
+            x = (
+                tl.load(x_ptr + ptrs, mask=ok, other=float("-inf"))
+                .to(IN_DT)
+                .to(tl.float32)
+            )
         m_chunk = tl.max(x, axis=0)
         e = tl.exp(x - m_chunk[None, :])
         if not NO_MASK:
             e = tl.where(ok, e, 0.0)
         s_pref = tl.associative_scan(e, axis=0, combine_fn=_lce_add)
         M = tl.maximum(m_carry[None, :], m_chunk[None, :])
-        S = s_carry[None, :] * tl.exp(m_carry[None, :] - M) + s_pref * tl.exp(m_chunk[None, :] - M)
+        S = s_carry[None, :] * tl.exp(m_carry[None, :] - M) + s_pref * tl.exp(
+            m_chunk[None, :] - M
+        )
         if NO_MASK:
             tl.store(o_ptr + ptrs, (M + tl.log(S)).to(OUT_DT))
         else:
@@ -162,9 +200,14 @@ def _lce_single_add(
 # ---------------- two-pass (fp32 compute), 2D row scans (cols == 1) ----------------
 @triton.jit
 def _lce_agg(
-    x_ptr, m_ptr, s_ptr,
-    C, NCHUNK,
-    CHUNK_C: tl.constexpr, IN_DT: tl.constexpr, NO_MASK: tl.constexpr,
+    x_ptr,
+    m_ptr,
+    s_ptr,
+    C,
+    NCHUNK,
+    CHUNK_C: tl.constexpr,
+    IN_DT: tl.constexpr,
+    NO_MASK: tl.constexpr,
 ):
     pid_c = tl.program_id(0)
     row = tl.program_id(1)
@@ -187,9 +230,17 @@ def _lce_agg(
 
 @triton.jit
 def _lce_apply(
-    x_ptr, o_ptr, m_ptr, pm_ptr, ps_ptr,
-    C, NCHUNK,
-    CHUNK_C: tl.constexpr, OUT_DT: tl.constexpr, IN_DT: tl.constexpr, NO_MASK: tl.constexpr,
+    x_ptr,
+    o_ptr,
+    m_ptr,
+    pm_ptr,
+    ps_ptr,
+    C,
+    NCHUNK,
+    CHUNK_C: tl.constexpr,
+    OUT_DT: tl.constexpr,
+    IN_DT: tl.constexpr,
+    NO_MASK: tl.constexpr,
 ):
     # additive-scan apply: e = exp(x - m_agg), prefix-sum of e (pure add scan),
     # then merge the exclusive carry via M = max(m_carry, m_agg).
@@ -238,8 +289,11 @@ def _lce_exclprefix(m_ptr, s_ptr, pm_ptr, ps_ptr, NCHUNK):
 # ---------------- fp64 two-pass: fp32 exp/log + fp64 accumulation ----------------
 @triton.jit
 def _lce_agg64f(
-    x_ptr, m_ptr, s_ptr,
-    C, NCHUNK,
+    x_ptr,
+    m_ptr,
+    s_ptr,
+    C,
+    NCHUNK,
     CHUNK_C: tl.constexpr,
 ):
     pid_c = tl.program_id(0)
@@ -259,9 +313,14 @@ def _lce_agg64f(
 
 @triton.jit
 def _lce_apply64f(
-    x_ptr, o_ptr, m_ptr, s_ptr,
-    C, NCHUNK,
-    CHUNK_C: tl.constexpr, OUT_DT: tl.constexpr,
+    x_ptr,
+    o_ptr,
+    m_ptr,
+    s_ptr,
+    C,
+    NCHUNK,
+    CHUNK_C: tl.constexpr,
+    OUT_DT: tl.constexpr,
 ):
     pid_c = tl.program_id(0)
     row = tl.program_id(1)
@@ -288,16 +347,25 @@ def _lce_apply64f(
         e2 = tl.exp((xk - m_new).to(tl.float32)).to(tl.float64)
         s = s * e1 + e2
         m = m_new
-        tl.store(o_ptr + row * C + ck, (m + tl.log(s.to(tl.float32)).to(tl.float64)).to(OUT_DT), mask=okk)
+        tl.store(
+            o_ptr + row * C + ck,
+            (m + tl.log(s.to(tl.float32)).to(tl.float64)).to(OUT_DT),
+            mask=okk,
+        )
 
 
 # ---------------- fp64 exact serial (fallback for non-2D / cols>1 fp64) ----------------
 @triton.jit
 def _lce_serial64(
-    x_ptr, o_ptr,
-    C, P,
-    ROW_STRIDE, STRIDE_P, STRIDE_SCAN,
-    BLOCK_P: tl.constexpr, OUT_DT: tl.constexpr,
+    x_ptr,
+    o_ptr,
+    C,
+    P,
+    ROW_STRIDE,
+    STRIDE_P,
+    STRIDE_SCAN,
+    BLOCK_P: tl.constexpr,
+    OUT_DT: tl.constexpr,
 ):
     pid_p = tl.program_id(0)
     row = tl.program_id(1)
@@ -312,20 +380,42 @@ def _lce_serial64(
         m_new = tl.maximum(m, x)
         s = s * tl.exp(m - m_new) + tl.exp(x - m_new)
         m = m_new
-        tl.store(o_ptr + base + c * STRIDE_SCAN, (m + tl.log(s)).to(OUT_DT), mask=p_mask)
+        tl.store(
+            o_ptr + base + c * STRIDE_SCAN, (m + tl.log(s)).to(OUT_DT), mask=p_mask
+        )
 
 
 # ---------------- generic fallback for non-contiguous inputs ----------------
 # Decomposes (row, col) into original dim indices and computes base offsets in-kernel.
 @triton.jit
 def _lce_generic32(
-    x_ptr, o_ptr,
-    C, ROWS, COLS, STRIDE_C,
-    PRE0, PRE1, PRE2, PRE3,
-    POST0, POST1, POST2, POST3,
-    ST0, ST1, ST2, ST3, ST4, ST5, ST6, ST7,
-    N_PRE: tl.constexpr, N_POST: tl.constexpr,
-    BLOCK_COLS: tl.constexpr, OUT_DT: tl.constexpr, IN_DT: tl.constexpr,
+    x_ptr,
+    o_ptr,
+    C,
+    ROWS,
+    COLS,
+    STRIDE_C,
+    PRE0,
+    PRE1,
+    PRE2,
+    PRE3,
+    POST0,
+    POST1,
+    POST2,
+    POST3,
+    ST0,
+    ST1,
+    ST2,
+    ST3,
+    ST4,
+    ST5,
+    ST6,
+    ST7,
+    N_PRE: tl.constexpr,
+    N_POST: tl.constexpr,
+    BLOCK_COLS: tl.constexpr,
+    OUT_DT: tl.constexpr,
+    IN_DT: tl.constexpr,
 ):
     pid_c = tl.program_id(0)
     row = tl.program_id(1)
@@ -336,8 +426,12 @@ def _lce_generic32(
     base_col = tl.zeros([BLOCK_COLS], dtype=tl.int64)
     for k in tl.static_range(4):
         if k < N_POST:
-            sz = tl.where(k == 0, POST0, tl.where(k == 1, POST1, tl.where(k == 2, POST2, POST3)))
-            st = tl.where(k == 0, ST4, tl.where(k == 1, ST5, tl.where(k == 2, ST6, ST7)))
+            sz = tl.where(
+                k == 0, POST0, tl.where(k == 1, POST1, tl.where(k == 2, POST2, POST3))
+            )
+            st = tl.where(
+                k == 0, ST4, tl.where(k == 1, ST5, tl.where(k == 2, ST6, ST7))
+            )
             base_col += (cc % sz) * st
             cc = cc // sz
     # row decomposition
@@ -345,15 +439,23 @@ def _lce_generic32(
     base_row = 0
     for k in tl.static_range(4):
         if k < N_PRE:
-            sz = tl.where(k == 0, PRE0, tl.where(k == 1, PRE1, tl.where(k == 2, PRE2, PRE3)))
-            st = tl.where(k == 0, ST0, tl.where(k == 1, ST1, tl.where(k == 2, ST2, ST3)))
+            sz = tl.where(
+                k == 0, PRE0, tl.where(k == 1, PRE1, tl.where(k == 2, PRE2, PRE3))
+            )
+            st = tl.where(
+                k == 0, ST0, tl.where(k == 1, ST1, tl.where(k == 2, ST2, ST3))
+            )
             base_row += (rr % sz) * st
             rr = rr // sz
     base = base_row + base_col
     m = tl.full([BLOCK_COLS], float("-inf"), dtype=tl.float32)
     s = tl.zeros([BLOCK_COLS], dtype=tl.float32)
     for c in range(C):
-        x = tl.load(x_ptr + base + c * STRIDE_C, mask=col_mask, other=float("-inf")).to(IN_DT).to(tl.float32)
+        x = (
+            tl.load(x_ptr + base + c * STRIDE_C, mask=col_mask, other=float("-inf"))
+            .to(IN_DT)
+            .to(tl.float32)
+        )
         m_new = tl.maximum(m, x)
         s = s * tl.exp(m - m_new) + tl.exp(x - m_new)
         m = m_new
@@ -369,7 +471,7 @@ def logcumsumexp_out(inp, dim=1, *, dtype=None, out):
         rows *= s
     C = shp[dim]
     cols = 1
-    for s in shp[dim + 1:]:
+    for s in shp[dim + 1 :]:
         cols *= s
 
     comp = dtype if dtype is not None else inp.dtype
@@ -383,31 +485,67 @@ def logcumsumexp_out(inp, dim=1, *, dtype=None, out):
             s = torch.empty((rows, nchunk), device=inp.device, dtype=torch.float64)
             grid = (nchunk, rows)
             _lce_agg64f[grid](inp, m, s, C, nchunk, CHUNK_C=CHUNK_C, num_warps=4)
-            _lce_apply64f[grid](inp, out, m, s, C, nchunk, CHUNK_C=CHUNK_C, OUT_DT=out_dt, num_warps=4)
+            _lce_apply64f[grid](
+                inp, out, m, s, C, nchunk, CHUNK_C=CHUNK_C, OUT_DT=out_dt, num_warps=4
+            )
         else:
             grid = (triton.cdiv(cols, 64), rows)
-            _lce_serial64[grid](inp, out, C, cols, C * cols, 1, cols,
-                                BLOCK_P=64, OUT_DT=out_dt, num_warps=4)
+            _lce_serial64[grid](
+                inp,
+                out,
+                C,
+                cols,
+                C * cols,
+                1,
+                cols,
+                BLOCK_P=64,
+                OUT_DT=out_dt,
+                num_warps=4,
+            )
         return out
 
     in_dt = _TL_DT.get(inp.dtype, tl.float32)
     if not inp.is_contiguous():
         pre = shp[:dim]
-        post = shp[dim + 1:]
+        post = shp[dim + 1 :]
         strides = inp.stride()
+
         def _pad(seq, n):
             return tuple(seq) + (1,) * (n - len(seq))
+
         PRE = _pad(pre, 4)
         POST = _pad(post, 4)
-        ST = _pad(strides[:dim], 4) + _pad(strides[dim + 1:], 4)
+        ST = _pad(strides[:dim], 4) + _pad(strides[dim + 1 :], 4)
         grid = (triton.cdiv(cols, 64), rows)
         _lce_generic32[grid](
-            inp, out, C, rows, cols, strides[dim],
-            PRE[0], PRE[1], PRE[2], PRE[3],
-            POST[0], POST[1], POST[2], POST[3],
-            ST[0], ST[1], ST[2], ST[3], ST[4], ST[5], ST[6], ST[7],
-            N_PRE=len(pre), N_POST=len(post),
-            BLOCK_COLS=64, OUT_DT=out_dt, IN_DT=in_dt, num_warps=4,
+            inp,
+            out,
+            C,
+            rows,
+            cols,
+            strides[dim],
+            PRE[0],
+            PRE[1],
+            PRE[2],
+            PRE[3],
+            POST[0],
+            POST[1],
+            POST[2],
+            POST[3],
+            ST[0],
+            ST[1],
+            ST[2],
+            ST[3],
+            ST[4],
+            ST[5],
+            ST[6],
+            ST[7],
+            N_PRE=len(pre),
+            N_POST=len(post),
+            BLOCK_COLS=64,
+            OUT_DT=out_dt,
+            IN_DT=in_dt,
+            num_warps=4,
         )
         return out
 
@@ -415,37 +553,118 @@ def logcumsumexp_out(inp, dim=1, *, dtype=None, out):
         if (C > 16384 or (rows < 512 and C >= 1024)) and rows * C > 262144:
             CHUNK_C = 1024 if C >= 65536 else 2048
             nchunk = triton.cdiv(C, CHUNK_C)
-            no_mask = (C % CHUNK_C == 0)
+            no_mask = C % CHUNK_C == 0
             m = torch.empty((rows, nchunk), device=inp.device, dtype=torch.float32)
             s = torch.empty((rows, nchunk), device=inp.device, dtype=torch.float32)
             pm = torch.empty((rows, nchunk), device=inp.device, dtype=torch.float32)
             ps = torch.empty((rows, nchunk), device=inp.device, dtype=torch.float32)
             grid = (nchunk, rows)
-            _lce_agg[grid](inp, m, s, C, nchunk, CHUNK_C=CHUNK_C, IN_DT=in_dt,
-                           NO_MASK=no_mask, num_warps=2)
+            _lce_agg[grid](
+                inp,
+                m,
+                s,
+                C,
+                nchunk,
+                CHUNK_C=CHUNK_C,
+                IN_DT=in_dt,
+                NO_MASK=no_mask,
+                num_warps=2,
+            )
             _lce_exclprefix[(rows,)](m, s, pm, ps, nchunk, num_warps=2)
-            _lce_apply[grid](inp, out, m, pm, ps, C, nchunk, CHUNK_C=CHUNK_C,
-                             OUT_DT=out_dt, IN_DT=in_dt, NO_MASK=no_mask, num_warps=2)
+            _lce_apply[grid](
+                inp,
+                out,
+                m,
+                pm,
+                ps,
+                C,
+                nchunk,
+                CHUNK_C=CHUNK_C,
+                OUT_DT=out_dt,
+                IN_DT=in_dt,
+                NO_MASK=no_mask,
+                num_warps=2,
+            )
         else:
             if C <= 64:
-                _lce_single_nc[(triton.cdiv(rows, 16), 1)](inp, out, C, rows, 0, C, 1,
-                                                           CHUNK_C=64, BLOCK_P=16, OUT_DT=out_dt, IN_DT=in_dt,
-                                                           NO_MASK=(C == 64 and rows % 16 == 0), num_warps=4)
+                _lce_single_nc[(triton.cdiv(rows, 16), 1)](
+                    inp,
+                    out,
+                    C,
+                    rows,
+                    0,
+                    C,
+                    1,
+                    CHUNK_C=64,
+                    BLOCK_P=16,
+                    OUT_DT=out_dt,
+                    IN_DT=in_dt,
+                    NO_MASK=(C == 64 and rows % 16 == 0),
+                    num_warps=4,
+                )
             elif C <= 256:
-                _lce_single_nc[(triton.cdiv(rows, 8), 1)](inp, out, C, rows, 0, C, 1,
-                                                          CHUNK_C=256, BLOCK_P=8, OUT_DT=out_dt, IN_DT=in_dt,
-                                                          NO_MASK=(C == 256 and rows % 8 == 0), num_warps=4)
+                _lce_single_nc[(triton.cdiv(rows, 8), 1)](
+                    inp,
+                    out,
+                    C,
+                    rows,
+                    0,
+                    C,
+                    1,
+                    CHUNK_C=256,
+                    BLOCK_P=8,
+                    OUT_DT=out_dt,
+                    IN_DT=in_dt,
+                    NO_MASK=(C == 256 and rows % 8 == 0),
+                    num_warps=4,
+                )
             elif C <= 1024:
-                _lce_single_nc[(triton.cdiv(rows, 4), 1)](inp, out, C, rows, 0, C, 1,
-                                                          CHUNK_C=1024, BLOCK_P=4, OUT_DT=out_dt, IN_DT=in_dt,
-                                                          NO_MASK=(C == 1024 and rows % 4 == 0), num_warps=4)
+                _lce_single_nc[(triton.cdiv(rows, 4), 1)](
+                    inp,
+                    out,
+                    C,
+                    rows,
+                    0,
+                    C,
+                    1,
+                    CHUNK_C=1024,
+                    BLOCK_P=4,
+                    OUT_DT=out_dt,
+                    IN_DT=in_dt,
+                    NO_MASK=(C == 1024 and rows % 4 == 0),
+                    num_warps=4,
+                )
             else:
-                _lce_single_add[(triton.cdiv(rows, 4), 1)](inp, out, C, rows, 0, C, 1,
-                                                           CHUNK_C=128, BLOCK_P=4, OUT_DT=out_dt, IN_DT=in_dt,
-                                                           NO_MASK=(C % 128 == 0 and rows % 4 == 0), num_warps=2)
+                _lce_single_add[(triton.cdiv(rows, 4), 1)](
+                    inp,
+                    out,
+                    C,
+                    rows,
+                    0,
+                    C,
+                    1,
+                    CHUNK_C=128,
+                    BLOCK_P=4,
+                    OUT_DT=out_dt,
+                    IN_DT=in_dt,
+                    NO_MASK=(C % 128 == 0 and rows % 4 == 0),
+                    num_warps=2,
+                )
     else:
         grid = (triton.cdiv(cols, 64), rows)
-        _lce_single[grid](inp, out, C, cols, C * cols, 1, cols,
-                          CHUNK_C=64, BLOCK_P=64, OUT_DT=out_dt, IN_DT=in_dt,
-                          NO_MASK=(C % 64 == 0 and cols % 64 == 0), num_warps=4)
+        _lce_single[grid](
+            inp,
+            out,
+            C,
+            cols,
+            C * cols,
+            1,
+            cols,
+            CHUNK_C=64,
+            BLOCK_P=64,
+            OUT_DT=out_dt,
+            IN_DT=in_dt,
+            NO_MASK=(C % 64 == 0 and cols % 64 == 0),
+            num_warps=4,
+        )
     return out

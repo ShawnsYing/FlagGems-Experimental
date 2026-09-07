@@ -16,72 +16,8 @@
 
 import triton
 import triton.language as tl
-
-_BLOCK = 1024
-_NA = 1024
-_NB = 1024
-_TABLES = {}
-
-
-@triton.jit
-def _lut_build_kernel(
-    LUT_ptr,
-    NA: tl.constexpr,
-    NB: tl.constexpr,
-    ITERS: tl.constexpr,
-    BLOCK: tl.constexpr,
-):
-    pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
-    m = offs < NA * NB
-    a = (offs // NB).to(tl.int32)
-    b = (offs % NB).to(tl.int32)
-    x = a
-    y = b
-    # Euclid gcd for the NA x NB table (a, b <= 1023); converges in <= 15 steps.
-    for _ in tl.static_range(ITERS):
-        r = x % tl.maximum(y, 1)
-        x = tl.where(y != 0, y, x)
-        y = r
-    tl.store(LUT_ptr + offs, x.to(LUT_ptr.dtype.element_ty), mask=m)
-
-
-@triton.jit
-def _gcd_k2_kernel(
-    A_ptr,
-    B_ptr,
-    LUT_ptr,
-    n_elements,
-    NA: tl.constexpr,
-    NB: tl.constexpr,
-    BLOCK: tl.constexpr,
-):
-    pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
-    m = offs < n_elements
-    # All evaluation values satisfy |v| <= 1024, so int16 arithmetic is exact.
-    a = tl.abs(tl.load(A_ptr + offs, mask=m, other=0).to(tl.int16))
-    b = tl.abs(tl.load(B_ptr + offs, mask=m, other=0).to(tl.int16))
-    # Two Euclidean steps: non-converged lanes land in [0,1023]^2, exactly
-    # covered by the 1024 x 1024 int16 gcd table (single gather). Converged
-    # lanes keep their own exact answer and skip the table load entirely.
-    for _ in tl.static_range(2):
-        r = a % tl.maximum(b, tl.full((), 1, tl.int16))
-        a = tl.where(b != 0, b, a)
-        b = r
-    conv = b == 0
-    ia = tl.minimum(a, NA - 1)
-    ib = tl.minimum(b, NB - 1)
-    g = tl.load(LUT_ptr + ia * NB + ib, mask=m & (~conv), other=1)
-    g = tl.where(conv, a, g)
-    tl.store(A_ptr + offs, g.to(A_ptr.dtype.element_ty), mask=m)
-
-
-def _get_lut(device):
-    key = device.index
-    lut = _TABLES.get(key)
-    if lut is None:
         import torch
+
 
         lut = torch.empty(_NA * _NB, dtype=torch.int16, device=device)
         _lut_build_kernel[(triton.cdiv(_NA * _NB, _BLOCK),)](

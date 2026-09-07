@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-
-logger = logging.getLogger(__name__)
-
 """linalg_ldl_factor in Triton (real dtypes).
 
 Replicates the reference (torch.linalg.ldl_factor on the metax/MACA cuSOLVER
@@ -37,11 +33,16 @@ are 1-based with -(imax+1) written at both positions of a 2x2 block.
 Loop-carried WK dependencies are guarded with tl.debug_barrier().
 """
 
+import logging
+
 import torch
 import triton
 import triton.language as tl
 
-_ALPHA = (1.0 + (17.0 ** 0.5)) / 8.0
+logger = logging.getLogger(__name__)
+
+
+_ALPHA = (1.0 + (17.0**0.5)) / 8.0
 
 
 @triton.jit
@@ -103,7 +104,7 @@ def _ldl_kernel(
             row = tl.load(WK + row_off, mask=row_mask, other=0.0)
             r = tl.max(tl.abs(row), axis=0)
             d = tl.abs(tl.load(WK + base + imax * N + imax))
-            nop = (s * r >= ALPHA * c * c)
+            nop = s * r >= ALPHA * c * c
             swap = (~nop) & (d >= ALPHA * tl.maximum(c, r))
 
         if nop | swap:
@@ -116,8 +117,12 @@ def _ldl_kernel(
                 # store is needed - this also removes the load/store barrier the
                 # row-k store forced (the remaining tile-store vs tile-load
                 # ordering is the same pattern the nop path already uses).
-                lseg = tl.load(WK + base + (k + 1 + W) * N + imax, mask=col_mask, other=0.0)
-                ckseg = tl.load(WK + base + (k + 1 + W) * N + k, mask=col_mask, other=0.0)
+                lseg = tl.load(
+                    WK + base + (k + 1 + W) * N + imax, mask=col_mask, other=0.0
+                )
+                ckseg = tl.load(
+                    WK + base + (k + 1 + W) * N + k, mask=col_mask, other=0.0
+                )
                 d0 = tl.load(WK + base + imax * N + imax)
                 s_kim = tl.load(WK + base + k * N + imax)
                 s_kk = tl.load(WK + base + k * N + k)
@@ -129,21 +134,25 @@ def _ldl_kernel(
                     base + (k + 1 + W[:, None]) * N + (k + 1 + W[None, :]),
                 )
                 offs_store = base + (k + 1 + W[:, None]) * N + (k + 1 + W[None, :])
-                m2 = ((k + 1 + W[:, None]) < N) & ((k + 1 + W[None, :]) < N) & ((k + 1 + W[None, :]) != imax)
+                m2 = (
+                    ((k + 1 + W[:, None]) < N)
+                    & ((k + 1 + W[None, :]) < N)
+                    & ((k + 1 + W[None, :]) != imax)
+                )
                 t = tl.load(WK + offs_load, mask=m2, other=0.0)
                 # L column (rows k+1..N-1 of the swapped column k), divided by d0
-                l = tl.where(W == rel, s_kim, lseg) / d0
+                lower_col = tl.where(W == rel, s_kim, lseg) / d0
                 l_imax = s_kim / d0
                 tl.store(PIV + pbase + k, imax + 1)
                 tl.store(LD + base + k * N + k, d0)
                 if d0 != 0.0:
-                    tl.store(LD + base + (k + 1 + W) * N + k, l, mask=col_mask)
-                    t = t - d0 * (l[:, None] * l[None, :])
+                    tl.store(LD + base + (k + 1 + W) * N + k, lower_col, mask=col_mask)
+                    t = t - d0 * (lower_col[:, None] * lower_col[None, :])
                     tl.store(WK + offs_store, t, mask=m2)
                     # swapped column imax: old column k (row-imax entry = old
                     # WK[k,k]) minus the rank-1 correction
                     ck_corr = tl.where(W == rel, s_kk, ckseg)
-                    cimax = ck_corr - d0 * (l * l_imax)
+                    cimax = ck_corr - d0 * (lower_col * l_imax)
                     tl.store(WK + base + (k + 1 + W) * N + imax, cimax, mask=col_mask)
                     tl.debug_barrier()
                 else:
@@ -169,17 +178,19 @@ def _ldl_kernel(
                     piv1 = imax + 1
                     d0 = tl.load(WK + base + k * N + k)
                     # post-swap L column: new column k, rows k+1..N-1
-                    l = tl.load(WK + base + (k + 1 + W) * N + k, mask=col_mask, other=0.0)
+                    lower_col = tl.load(
+                        WK + base + (k + 1 + W) * N + k, mask=col_mask, other=0.0
+                    )
                 else:
                     piv1 = k + 1
                     d0 = s_val
                     # no swap: the decision-time column-k load IS the L column
-                    l = col
+                    lower_col = col
                 tl.store(PIV + pbase + k, piv1)
                 tl.store(LD + base + k * N + k, d0)
                 if d0 != 0.0:
-                    l = l / d0
-                    tl.store(LD + base + (k + 1 + W) * N + k, l, mask=col_mask)
+                    lower_col = lower_col / d0
+                    tl.store(LD + base + (k + 1 + W) * N + k, lower_col, mask=col_mask)
                     if CHUNK == BLOCK:
                         # single-chunk trailing update: reuse the register L column
                         # for both axes (rows k+1+W and cols k+1+W are identical),
@@ -187,7 +198,7 @@ def _ldl_kernel(
                         offs2 = base + (k + 1 + W[:, None]) * N + (k + 1 + W[None, :])
                         m2 = ((k + 1 + W[:, None]) < N) & ((k + 1 + W[None, :]) < N)
                         t = tl.load(WK + offs2, mask=m2, other=0.0)
-                        t = t - d0 * (l[:, None] * l[None, :])
+                        t = t - d0 * (lower_col[:, None] * lower_col[None, :])
                         tl.store(WK + offs2, t, mask=m2)
                         tl.debug_barrier()
                     else:
@@ -196,12 +207,16 @@ def _ldl_kernel(
                         while cstart < N:
                             Wc = tl.arange(0, CHUNK)
                             cmask = (cstart + Wc) < N
-                            offs2 = base + (k + 1 + W[:, None]) * N + (cstart + Wc[None, :])
+                            offs2 = (
+                                base + (k + 1 + W[:, None]) * N + (cstart + Wc[None, :])
+                            )
                             m2 = ((k + 1 + W[:, None]) < N) & cmask[None, :]
                             t = tl.load(WK + offs2, mask=m2, other=0.0)
-                            lc = tl.load(WK + base + (cstart + Wc) * N + k, mask=cmask, other=0.0)
+                            lc = tl.load(
+                                WK + base + (cstart + Wc) * N + k, mask=cmask, other=0.0
+                            )
                             lc = lc / d0
-                            t = t - d0 * (l[:, None] * lc[None, :])
+                            t = t - d0 * (lower_col[:, None] * lc[None, :])
                             tl.store(WK + offs2, t, mask=m2)
                             tl.debug_barrier()
                             cstart = cstart + CHUNK
@@ -226,14 +241,18 @@ def _ldl_kernel(
                 # L column 2: new column k+1 at rows k+2..N-1 is the post-swap
                 # column imax, and the (imax,imax) corner lands correctly because
                 # ck at row imax holds old WK[k+1,k+1] after the row store.
-                ck = tl.load(WK + base + (k + 2 + W) * N + (k + 1), mask=mrow, other=0.0)
+                ck = tl.load(
+                    WK + base + (k + 2 + W) * N + (k + 1), mask=mrow, other=0.0
+                )
                 ci = tl.load(WK + base + (k + 2 + W) * N + imax, mask=mrow, other=0.0)
                 tl.store(WK + base + (k + 2 + W) * N + (k + 1), ci, mask=mrow)
                 tl.store(WK + base + (k + 2 + W) * N + imax, ck, mask=mrow)
                 tl.debug_barrier()
                 c1 = ci
             else:
-                c1 = tl.load(WK + base + (k + 2 + W) * N + (k + 1), mask=mrow, other=0.0)
+                c1 = tl.load(
+                    WK + base + (k + 2 + W) * N + (k + 1), mask=mrow, other=0.0
+                )
                 d12 = tl.load(WK + base + (k + 1) * N + k)
                 d22 = tl.load(WK + base + (k + 1) * N + (k + 1))
             d11 = tl.load(WK + base + k * N + k)
@@ -267,8 +286,14 @@ def _ldl_kernel(
                         offs2 = base + (k + 2 + W[:, None]) * N + (cstart + Wc[None, :])
                         m2 = ((k + 2 + W[:, None]) < N) & cmask[None, :]
                         t = tl.load(WK + offs2, mask=m2, other=0.0)
-                        c0c = tl.load(WK + base + (cstart + Wc) * N + k, mask=cmask, other=0.0)
-                        c1c = tl.load(WK + base + (cstart + Wc) * N + (k + 1), mask=cmask, other=0.0)
+                        c0c = tl.load(
+                            WK + base + (cstart + Wc) * N + k, mask=cmask, other=0.0
+                        )
+                        c1c = tl.load(
+                            WK + base + (cstart + Wc) * N + (k + 1),
+                            mask=cmask,
+                            other=0.0,
+                        )
                         l1c = (c0c * d22 - c1c * d12) / det
                         l2c = (c1c * d11 - c0c * d12) / det
                         t = t - (u[:, None] * l1c[None, :] + v[:, None] * l2c[None, :])
@@ -304,7 +329,15 @@ def ldl_factor(self, *, hermitian=False):
     else:
         nw = 16
     _ldl_kernel[(batch,)](
-        self, LD, PIV, WK, n, _ALPHA, BLOCK=block, CHUNK=chunk, num_warps=nw,
+        self,
+        LD,
+        PIV,
+        WK,
+        n,
+        _ALPHA,
+        BLOCK=block,
+        CHUNK=chunk,
+        num_warps=nw,
     )
     piv = PIV.view(self.shape[:-1])
     return LD, piv

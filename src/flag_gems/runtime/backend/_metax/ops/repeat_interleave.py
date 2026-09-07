@@ -13,11 +13,9 @@
 # limitations under the License.
 
 import logging
-
 import torch
 import triton
 from triton import language as tl
-
 from flag_gems.utils import triton_lang_extension as ext
 from flag_gems.utils.pointwise_dynamic import pointwise_dynamic
 from flag_gems.utils.shape_utils import c_contiguous_stride
