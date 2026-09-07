@@ -206,16 +206,23 @@ def weight_int8pack_mm(A, B, scales):
         even = (N % 64 == 0) and (K % 256 == 0)
         grid = (triton.cdiv(N, 64),)
         _w8pack_gemv1_kernel[grid](
-            A, B, scales, out,
-            N, K,
+            A,
+            B,
+            scales,
+            out,
+            N,
+            K,
             A.stride(1),
-            B.stride(0), B.stride(1),
+            B.stride(0),
+            B.stride(1),
             scales.stride(0),
             out.stride(1),
             OUT_DTYPE=out_dtype,
-            BLOCK_N=64, BLOCK_K=256,
+            BLOCK_N=64,
+            BLOCK_K=256,
             EVEN=even,
-            num_warps=4, num_stages=3,
+            num_warps=4,
+            num_stages=3,
         )
         return out
 
@@ -256,16 +263,27 @@ def weight_int8pack_mm(A, B, scales):
     grid = (triton.cdiv(M, BLOCK_M) * triton.cdiv(N, BLOCK_N),)
 
     _w8pack_mm_kernel[grid](
-        A, B, scales, out,
-        M, N, K,
-        A.stride(0), A.stride(1),
-        B.stride(0), B.stride(1),
+        A,
+        B,
+        scales,
+        out,
+        M,
+        N,
+        K,
+        A.stride(0),
+        A.stride(1),
+        B.stride(0),
+        B.stride(1),
         scales.stride(0),
-        out.stride(0), out.stride(1),
+        out.stride(0),
+        out.stride(1),
         OUT_DTYPE=out_dtype,
-        BLOCK_M=BLOCK_M, BLOCK_N=BLOCK_N, BLOCK_K=BLOCK_K,
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+        BLOCK_K=BLOCK_K,
         GROUP_M=8,
         EVEN=even,
-        num_warps=num_warps, num_stages=3,
+        num_warps=num_warps,
+        num_stages=3,
     )
     return out
