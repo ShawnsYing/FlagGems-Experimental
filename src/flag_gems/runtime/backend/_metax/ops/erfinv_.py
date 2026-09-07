@@ -14,16 +14,22 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
+
 
 @triton.jit
-def _erfinv_inplace_kernel(x_ptr, n_elements, BLOCK: tl.constexpr, UPCAST: tl.constexpr,
-                           OUT_DTYPE: tl.constexpr, MASKED: tl.constexpr):
+def _erfinv_inplace_kernel(
+    x_ptr,
+    n_elements,
+    BLOCK: tl.constexpr,
+    UPCAST: tl.constexpr,
+    OUT_DTYPE: tl.constexpr,
+    MASKED: tl.constexpr,
+):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
     if MASKED:
@@ -128,6 +134,13 @@ def erfinv_(x):
         num_warps = 4
     masked = (n % block) != 0
     grid = ((n + block - 1) // block,)
-    _erfinv_inplace_kernel[grid](x, n, BLOCK=block, UPCAST=upcast,
-                                 OUT_DTYPE=out_dtype, MASKED=masked, num_warps=num_warps)
+    _erfinv_inplace_kernel[grid](
+        x,
+        n,
+        BLOCK=block,
+        UPCAST=upcast,
+        OUT_DTYPE=out_dtype,
+        MASKED=masked,
+        num_warps=num_warps,
+    )
     return x

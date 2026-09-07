@@ -14,10 +14,10 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
 
 
 @triton.jit
@@ -55,9 +55,15 @@ def _gcd_flat_kernel(A, B, n_elements, EVEN: tl.constexpr, BLOCK: tl.constexpr):
 
 
 @triton.jit
-def _gcd_strided_kernel(A, B, n_elements,
-                        SHAPES: tl.constexpr, SA: tl.constexpr, SBM: tl.constexpr,
-                        BLOCK: tl.constexpr):
+def _gcd_strided_kernel(
+    A,
+    B,
+    n_elements,
+    SHAPES: tl.constexpr,
+    SA: tl.constexpr,
+    SBM: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
     """General path: A any strides, B broadcastable to A's shape."""
     pid = tl.program_id(0)
     offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
@@ -91,11 +97,13 @@ def gcd_(A, B):
             # floor for both dtypes (6.3-6.6us vs 7.2us b512-w4, 7.4-7.9us
             # b1024-w4). Fallback: masked b1024 w4 when n % 32 != 0.
             if (n % 32 == 0) and (n < (1 << 31)):
-                _gcd_flat_kernel[(triton.cdiv(n, 32),)](A, B, n, EVEN=True, BLOCK=32,
-                                                         num_warps=1)
+                _gcd_flat_kernel[(triton.cdiv(n, 32),)](
+                    A, B, n, EVEN=True, BLOCK=32, num_warps=1
+                )
             else:
-                _gcd_flat_kernel[(triton.cdiv(n, 1024),)](A, B, n, EVEN=False, BLOCK=1024,
-                                                           num_warps=4)
+                _gcd_flat_kernel[(triton.cdiv(n, 1024),)](
+                    A, B, n, EVEN=False, BLOCK=1024, num_warps=4
+                )
         elif n < (1 << 26):
             # Mid-size: int16 keeps the single-warp EVEN fast path at BLOCK=1024.
             # int32 is fastest at BLOCK=256/num_warps=1 (convergence domain of
@@ -103,23 +111,27 @@ def gcd_(A, B):
             # 145.6us for b1024 w1); fall back to b1024 w2 when n % 256 != 0.
             if A.dtype.itemsize == 2:
                 even = (n % 1024 == 0) and (n < (1 << 31))
-                _gcd_flat_kernel[(triton.cdiv(n, 1024),)](A, B, n, EVEN=even, BLOCK=1024,
-                                                           num_warps=1)
+                _gcd_flat_kernel[(triton.cdiv(n, 1024),)](
+                    A, B, n, EVEN=even, BLOCK=1024, num_warps=1
+                )
             else:
                 if (n % 256 == 0) and (n < (1 << 31)):
-                    _gcd_flat_kernel[(triton.cdiv(n, 256),)](A, B, n, EVEN=True, BLOCK=256,
-                                                              num_warps=1)
+                    _gcd_flat_kernel[(triton.cdiv(n, 256),)](
+                        A, B, n, EVEN=True, BLOCK=256, num_warps=1
+                    )
                 else:
-                    _gcd_flat_kernel[(triton.cdiv(n, 1024),)](A, B, n, EVEN=False, BLOCK=1024,
-                                                               num_warps=2)
+                    _gcd_flat_kernel[(triton.cdiv(n, 1024),)](
+                        A, B, n, EVEN=False, BLOCK=1024, num_warps=2
+                    )
         else:
             # Large DRAM-bound workloads: single-warp blocks make the per-step
             # convergence check a warp shuffle; int16 additionally uses the
             # unmasked int32-offset specialization (w2 regresses 1G: 4.74 vs
             # 4.34ms int16, 8.63 vs 8.61ms int32).
             even = (A.dtype.itemsize == 2) and (n % 1024 == 0) and (n < (1 << 31))
-            _gcd_flat_kernel[(triton.cdiv(n, 1024),)](A, B, n, EVEN=even, BLOCK=1024,
-                                                       num_warps=1)
+            _gcd_flat_kernel[(triton.cdiv(n, 1024),)](
+                A, B, n, EVEN=even, BLOCK=1024, num_warps=1
+            )
     else:
         ndim = A.dim()
         SHAPES = tuple(A.shape)
@@ -135,6 +147,7 @@ def gcd_(A, B):
                 SBM.append(b_stride[d - dim_offset])
         BLOCK = 1024
         grid = (triton.cdiv(n, BLOCK),)
-        _gcd_strided_kernel[grid](A, B, n, SHAPES=SHAPES, SA=SA, SBM=tuple(SBM),
-                                  BLOCK=BLOCK)
+        _gcd_strided_kernel[grid](
+            A, B, n, SHAPES=SHAPES, SA=SA, SBM=tuple(SBM), BLOCK=BLOCK
+        )
     return A

@@ -14,19 +14,24 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
+logger = logging.getLogger(__name__)
+
 
 @triton.jit
 def _cholesky_small_kernel(
-    A_ptr, W_ptr,
+    A_ptr,
+    W_ptr,
     N,
-    stride_ab, stride_am, stride_an,
-    stride_wb, stride_wm, stride_wn,
+    stride_ab,
+    stride_am,
+    stride_an,
+    stride_wb,
+    stride_wm,
+    stride_wn,
     BLOCK: tl.constexpr,
 ):
     """Single-block Cholesky for N <= BLOCK: load A, factor in registers, store L.
@@ -52,12 +57,14 @@ def _cholesky_small_kernel(
     R = D
     L = tl.zeros((BLOCK, BLOCK), dtype=D.dtype)
     for i in range(BLOCK):
-        col = tl.sum(tl.where(cols == i, R, 0.0), axis=1)   # residual column i
-        diag = tl.sum(tl.where(ar == i, col, 0.0))          # R[i, i]
+        col = tl.sum(tl.where(cols == i, R, 0.0), axis=1)  # residual column i
+        diag = tl.sum(tl.where(ar == i, col, 0.0))  # R[i, i]
         l_ii = tl.sqrt(tl.maximum(diag, 0.0))
         col_new = tl.where(ar == i, l_ii, tl.where(ar > i, col / l_ii, 0.0))
         L = tl.where(cols == i, col_new[:, None], L)
-        R = tl.where((rows > i) & (cols > i), R - col_new[:, None] * col_new[None, :], R)
+        R = tl.where(
+            (rows > i) & (cols > i), R - col_new[:, None] * col_new[None, :], R
+        )
 
     tl.store(
         w0 + rows * stride_wm + cols * stride_wn,
@@ -68,10 +75,15 @@ def _cholesky_small_kernel(
 
 @triton.jit
 def _init_lower_kernel(
-    A_ptr, W_ptr,
+    A_ptr,
+    W_ptr,
     N,
-    stride_ab, stride_am, stride_an,
-    stride_wb, stride_wm, stride_wn,
+    stride_ab,
+    stride_am,
+    stride_an,
+    stride_wb,
+    stride_wm,
+    stride_wn,
     BLOCK: tl.constexpr,
 ):
     """Copy the lower triangle of A into W (workspace/output), zero the upper."""
@@ -94,7 +106,9 @@ def _init_lower_kernel(
 def _cholesky_lower_kernel(
     W_ptr,
     N,
-    stride_wb, stride_wm, stride_wn,
+    stride_wb,
+    stride_wm,
+    stride_wn,
     BLOCK: tl.constexpr,
     RB: tl.constexpr,
 ):
@@ -124,12 +138,14 @@ def _cholesky_lower_kernel(
         R = D
         Ld = tl.zeros((BLOCK, BLOCK), dtype=D.dtype)
         for i in range(BLOCK):
-            col = tl.sum(tl.where(cols == i, R, 0.0), axis=1)   # (B,) residual column i
-            diag = tl.sum(tl.where(ar == i, col, 0.0))          # R[i, i]
+            col = tl.sum(tl.where(cols == i, R, 0.0), axis=1)  # (B,) residual column i
+            diag = tl.sum(tl.where(ar == i, col, 0.0))  # R[i, i]
             l_ii = tl.sqrt(tl.maximum(diag, 0.0))
             col_new = tl.where(ar == i, l_ii, tl.where(ar > i, col / l_ii, 0.0))
             Ld = tl.where(cols == i, col_new[:, None], Ld)
-            R = tl.where((rows > i) & (cols > i), R - col_new[:, None] * col_new[None, :], R)
+            R = tl.where(
+                (rows > i) & (cols > i), R - col_new[:, None] * col_new[None, :], R
+            )
 
         # store diagonal block factor (lower triangle)
         tl.store(
@@ -154,9 +170,11 @@ def _cholesky_lower_kernel(
                 )
                 Xb = P
                 for j in range(BLOCK):
-                    col_j = tl.sum(tl.where(cols == j, Ld, 0.0), axis=1)   # column j of Ld
+                    col_j = tl.sum(
+                        tl.where(cols == j, Ld, 0.0), axis=1
+                    )  # column j of Ld
                     l_jj = tl.sum(tl.where(ar == j, ld_diag, 0.0))
-                    xj = tl.sum(tl.where(cols == j, Xb, 0.0), axis=1)      # (RB,)
+                    xj = tl.sum(tl.where(cols == j, Xb, 0.0), axis=1)  # (RB,)
                     xj = xj / l_jj
                     Xb = tl.where(cols == j, xj[:, None], Xb)
                     Xb = tl.where(cols > j, Xb - xj[:, None] * col_j[None, :], Xb)
@@ -191,7 +209,11 @@ def _cholesky_lower_kernel(
                     )
                     upd = tl.dot(Xr, tl.trans(Xc), input_precision="ieee")
                     T = T - upd
-                    sm = rmask[:, None] & cmask[None, :] & (rr_g[:, None] >= cc_g[None, :])
+                    sm = (
+                        rmask[:, None]
+                        & cmask[None, :]
+                        & (rr_g[:, None] >= cc_g[None, :])
+                    )
                     tl.store(
                         w0 + rr_g[:, None] * stride_wm + cc_g[None, :] * stride_wn,
                         T,
@@ -201,10 +223,15 @@ def _cholesky_lower_kernel(
 
 @triton.jit
 def _transpose_kernel(
-    L_ptr, U_ptr,
+    L_ptr,
+    U_ptr,
     N,
-    stride_lb, stride_lm, stride_ln,
-    stride_ub, stride_um, stride_un,
+    stride_lb,
+    stride_lm,
+    stride_ln,
+    stride_ub,
+    stride_um,
+    stride_un,
     BLOCK: tl.constexpr,
 ):
     pid_b = tl.program_id(1)
@@ -249,27 +276,43 @@ def linalg_cholesky(A, upper=False):
         # single-kernel path: whole matrix fits in one diagonal block
         SB = 16 if n <= 16 else 32
         _cholesky_small_kernel[(batch,)](
-            A, W, n,
-            stride_ab, stride_am, stride_an,
-            swb, n, 1,
+            A,
+            W,
+            n,
+            stride_ab,
+            stride_am,
+            stride_an,
+            swb,
+            n,
+            1,
             BLOCK=SB,
             num_warps=(1 if n <= 16 else 2),
         )
     else:
         IB = 64
         _init_lower_kernel[(triton.cdiv(n, IB), triton.cdiv(n, IB), batch)](
-            A, W, n,
-            stride_ab, stride_am, stride_an,
-            swb, n, 1,
+            A,
+            W,
+            n,
+            stride_ab,
+            stride_am,
+            stride_an,
+            swb,
+            n,
+            1,
             BLOCK=IB,
         )
 
         CB = 32
         RB = 64
         _cholesky_lower_kernel[(batch,)](
-            W, n,
-            swb, n, 1,
-            BLOCK=CB, RB=RB,
+            W,
+            n,
+            swb,
+            n,
+            1,
+            BLOCK=CB,
+            RB=RB,
             num_warps=8,
         )
 
@@ -279,9 +322,15 @@ def linalg_cholesky(A, upper=False):
     U = torch.empty(A.shape, dtype=A.dtype, device=A.device)
     TB = 32
     _transpose_kernel[(triton.cdiv(n, TB), batch)](
-        W, U, n,
-        swb, n, 1,
-        swb, n, 1,
+        W,
+        U,
+        n,
+        swb,
+        n,
+        1,
+        swb,
+        n,
+        1,
         BLOCK=TB,
     )
     return U

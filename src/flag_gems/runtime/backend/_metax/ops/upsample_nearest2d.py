@@ -14,16 +14,16 @@
 
 import logging
 from typing import Optional, Tuple
-
 import torch
 import triton
 import triton.language as tl
-
 from flag_gems import runtime
 from flag_gems.runtime import device, torch_device_fn
 from flag_gems.utils import triton_lang_extension as ext
 
 logger = logging.getLogger(__name__)
+
+
 device = device.name
 
 

@@ -14,11 +14,11 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
+import torch
 import triton
 import triton.language as tl
-import torch
+
+logger = logging.getLogger(__name__)
 
 
 @triton.jit
@@ -130,7 +130,9 @@ def _lgamma_core(x, F64: tl.constexpr, LOWP: tl.constexpr):
 
 
 @triton.jit
-def _lgamma_kernel(A_ptr, n_elements, F64: tl.constexpr, LOWP: tl.constexpr, BLOCK: tl.constexpr):
+def _lgamma_kernel(
+    A_ptr, n_elements, F64: tl.constexpr, LOWP: tl.constexpr, BLOCK: tl.constexpr
+):
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n_elements

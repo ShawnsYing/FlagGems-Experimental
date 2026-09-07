@@ -14,11 +14,12 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
 
 # ===========================================================================
 # linalg_svdvals via one-sided Jacobi (Hestenes) on the working matrix W.
@@ -55,9 +56,13 @@ GROUP = 4
 # ---------------------------------------------------------------------------
 @triton.jit
 def _svdvals_reg_kernel(
-    A_ptr, Out_ptr,
-    R, C,
-    s_batch, row_stride, col_stride,
+    A_ptr,
+    Out_ptr,
+    R,
+    C,
+    s_batch,
+    row_stride,
+    col_stride,
     MAX_SWEEPS: tl.constexpr,
     ROT_EPS: tl.constexpr,
     BLOCK_R: tl.constexpr,
@@ -84,7 +89,9 @@ def _svdvals_reg_kernel(
                 alpha = tl.sum(cp * cp)
                 beta = tl.sum(cq * cq)
                 gamma = tl.sum(cp * cq)
-                do_rot = (gamma * gamma > eps2 * alpha * beta) & (alpha > 0.0) & (beta > 0.0)
+                do_rot = (
+                    (gamma * gamma > eps2 * alpha * beta) & (alpha > 0.0) & (beta > 0.0)
+                )
                 gamma_safe = tl.where(gamma != 0.0, gamma, 1.0)
                 zeta = (beta - alpha) * 0.5 / gamma_safe
                 sgn = tl.where(zeta >= 0.0, 1.0, -1.0)
@@ -129,7 +136,11 @@ def _init_kernel(A, AW, R, C, NCOLS, s_batch, rs, cs, BLOCK: tl.constexpr):
 @triton.jit
 def _jacobi_group_kernel(
     AW,
-    R, C, NCOLS, STEP_BASE, GROUP,
+    R,
+    C,
+    NCOLS,
+    STEP_BASE,
+    GROUP,
     ROT_EPS: tl.constexpr,
     BLOCK_R: tl.constexpr,
 ):
@@ -155,7 +166,9 @@ def _jacobi_group_kernel(
         alpha = tl.sum(ap * ap)
         beta = tl.sum(aq * aq)
         gamma = tl.sum(ap * aq)
-        active = (tl.abs(gamma) > ROT_EPS * tl.sqrt(alpha * beta + 1.0e-20)) & valid_pair
+        active = (
+            tl.abs(gamma) > ROT_EPS * tl.sqrt(alpha * beta + 1.0e-20)
+        ) & valid_pair
         safe_gamma = tl.where(active, gamma, 1.0)
         tau = (beta - alpha) / (2.0 * safe_gamma)
         sign_tau = tl.where(tau >= 0.0, 1.0, -1.0)
@@ -181,7 +194,11 @@ def _jacobi_group_kernel(
 @triton.jit
 def _fused_sweep_kernel(
     AW,
-    R, C, NCOLS, SWEEPS, STEP_LIMIT,
+    R,
+    C,
+    NCOLS,
+    SWEEPS,
+    STEP_LIMIT,
     ROT_EPS: tl.constexpr,
     BLOCK_R: tl.constexpr,
 ):
@@ -209,7 +226,9 @@ def _fused_sweep_kernel(
             alpha = tl.sum(ap * ap)
             beta = tl.sum(aq * aq)
             gamma = tl.sum(ap * aq)
-            active = (tl.abs(gamma) > ROT_EPS * tl.sqrt(alpha * beta + 1.0e-20)) & valid_pair
+            active = (
+                tl.abs(gamma) > ROT_EPS * tl.sqrt(alpha * beta + 1.0e-20)
+            ) & valid_pair
             safe_gamma = tl.where(active, gamma, 1.0)
             tau = (beta - alpha) / (2.0 * safe_gamma)
             sign_tau = tl.where(tau >= 0.0, 1.0, -1.0)
@@ -246,8 +265,9 @@ def _norm_kernel(AW, Out_ptr, R, C, NCOLS, BLOCK_R: tl.constexpr):
 # sqrt, sort descending, store (merges the norm + finalize launches)
 # ---------------------------------------------------------------------------
 @triton.jit
-def _finalize_from_W(W_ptr, Out_ptr, R, C, NCOLS,
-                     BLOCK_C: tl.constexpr, ROW_CHUNK: tl.constexpr):
+def _finalize_from_W(
+    W_ptr, Out_ptr, R, C, NCOLS, BLOCK_C: tl.constexpr, ROW_CHUNK: tl.constexpr
+):
     pid = tl.program_id(0).to(tl.int64)
     W = W_ptr + pid * R * NCOLS
     cc = tl.arange(0, BLOCK_C)
@@ -255,7 +275,9 @@ def _finalize_from_W(W_ptr, Out_ptr, R, C, NCOLS,
     acc = tl.zeros((BLOCK_C,), tl.float32)
     for c0 in tl.range(0, R, ROW_CHUNK):
         rows = c0 + rr
-        t = tl.load(W + cc[:, None] * NCOLS + rows[None, :], mask=rows[None, :] < R, other=0.0)
+        t = tl.load(
+            W + cc[:, None] * NCOLS + rows[None, :], mask=rows[None, :] < R, other=0.0
+        )
         acc += tl.sum(t * t, axis=1)
     sv = tl.sqrt(tl.maximum(acc, 0.0))
     s = tl.sort(sv, descending=True)
@@ -284,8 +306,12 @@ def _finalize_kernel(Src_ptr, Out_ptr, C, DO_SQRT: tl.constexpr, BLOCK_C: tl.con
 # ---------------------------------------------------------------------------
 @triton.jit
 def _gram_dot_kernel(
-    AW, G_ptr,
-    R, C, NCOLS, NCBLOCKS,
+    AW,
+    G_ptr,
+    R,
+    C,
+    NCOLS,
+    NCBLOCKS,
     BLOCK: tl.constexpr,
     CHUNK: tl.constexpr,
 ):
@@ -302,11 +328,23 @@ def _gram_dot_kernel(
     for r0 in tl.range(0, R, CHUNK):
         rows = r0 + rc
         rmask = rows < R
-        a = tl.load(aw_base + (i0 + cc)[:, None] * R + rows[None, :], mask=rmask[None, :], other=0.0)
-        b = tl.load(aw_base + (j0 + cc)[:, None] * R + rows[None, :], mask=rmask[None, :], other=0.0)
+        a = tl.load(
+            aw_base + (i0 + cc)[:, None] * R + rows[None, :],
+            mask=rmask[None, :],
+            other=0.0,
+        )
+        b = tl.load(
+            aw_base + (j0 + cc)[:, None] * R + rows[None, :],
+            mask=rmask[None, :],
+            other=0.0,
+        )
         acc += tl.dot(a, tl.trans(b))
     G = G_ptr + pid_b * C * C
-    tl.store(G + (i0 + cc)[:, None] * C + (j0 + cc)[None, :], acc, mask=((i0 + cc) < C)[:, None] & ((j0 + cc) < C)[None, :])
+    tl.store(
+        G + (i0 + cc)[:, None] * C + (j0 + cc)[None, :],
+        acc,
+        mask=((i0 + cc) < C)[:, None] & ((j0 + cc) < C)[None, :],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -314,8 +352,12 @@ def _gram_dot_kernel(
 # ---------------------------------------------------------------------------
 @triton.jit
 def _gram_build_kernel(
-    AW, G_ptr,
-    R, C, NCOLS, NCBLOCKS,
+    AW,
+    G_ptr,
+    R,
+    C,
+    NCOLS,
+    NCBLOCKS,
     BLOCK: tl.constexpr,
     ROW_CHUNK: tl.constexpr,
 ):
@@ -332,11 +374,23 @@ def _gram_build_kernel(
     for r0 in tl.range(0, R, ROW_CHUNK):
         rows = r0 + rr
         rmask = rows < R
-        a = tl.load(aw_base + (i0 + cc)[:, None] * R + rows[None, :], mask=rmask[None, :], other=0.0)
-        b = tl.load(aw_base + (j0 + cc)[:, None] * R + rows[None, :], mask=rmask[None, :], other=0.0)
+        a = tl.load(
+            aw_base + (i0 + cc)[:, None] * R + rows[None, :],
+            mask=rmask[None, :],
+            other=0.0,
+        )
+        b = tl.load(
+            aw_base + (j0 + cc)[:, None] * R + rows[None, :],
+            mask=rmask[None, :],
+            other=0.0,
+        )
         acc += tl.sum(a[:, None, :] * b[None, :, :], axis=2)
     G = G_ptr + pid_b * C * C
-    tl.store(G + (i0 + cc)[:, None] * C + (j0 + cc)[None, :], acc, mask=((i0 + cc) < C)[:, None] & ((j0 + cc) < C)[None, :])
+    tl.store(
+        G + (i0 + cc)[:, None] * C + (j0 + cc)[None, :],
+        acc,
+        mask=((i0 + cc) < C)[:, None] & ((j0 + cc) < C)[None, :],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -347,9 +401,14 @@ def _gram_build_kernel(
 # ---------------------------------------------------------------------------
 @triton.jit
 def _norms_partial_kernel(
-    A_ptr, P_ptr,
-    R, C, RBLOCKS,
-    s_batch, rs, cs,
+    A_ptr,
+    P_ptr,
+    R,
+    C,
+    RBLOCKS,
+    s_batch,
+    rs,
+    cs,
     BLOCK_R: tl.constexpr,
     BLOCK_C: tl.constexpr,
 ):
@@ -371,8 +430,10 @@ def _norms_partial_kernel(
 
 @triton.jit
 def _norms_reduce_sort_kernel(
-    P_ptr, Out_ptr,
-    RBLOCKS, C,
+    P_ptr,
+    Out_ptr,
+    RBLOCKS,
+    C,
     BLOCK_C: tl.constexpr,
 ):
     pid = tl.program_id(0).to(tl.int64)
@@ -394,12 +455,27 @@ def _norms_stage2(A32, out32, R, C, s_batch, rs, cs, num_batches, dev):
     partial = torch.empty((num_batches, rblocks, C), dtype=torch.float32, device=dev)
     nw1 = 4 if rblocks * cblocks >= 4096 else 8
     _norms_partial_kernel[(num_batches, rblocks, cblocks)](
-        A32, partial, R, C, rblocks, s_batch, rs, cs, BLOCK_R, BLOCK_C, num_warps=nw1,
+        A32,
+        partial,
+        R,
+        C,
+        rblocks,
+        s_batch,
+        rs,
+        cs,
+        BLOCK_R,
+        BLOCK_C,
+        num_warps=nw1,
     )
     BLOCK_C2 = max(2, triton.next_power_of_2(C))
     nw2 = 8 if C > 1024 else 4
     _norms_reduce_sort_kernel[(num_batches,)](
-        partial, out32, rblocks, C, BLOCK_C2, num_warps=nw2,
+        partial,
+        out32,
+        rblocks,
+        C,
+        BLOCK_C2,
+        num_warps=nw2,
     )
 
 
@@ -410,9 +486,13 @@ def _norms_stage2(A32, out32, R, C, s_batch, rs, cs, num_batches, dev):
 # ---------------------------------------------------------------------------
 @triton.jit
 def _norms_sort_kernel(
-    A_ptr, Out_ptr,
-    R, C,
-    s_batch, rs, cs,
+    A_ptr,
+    Out_ptr,
+    R,
+    C,
+    s_batch,
+    rs,
+    cs,
     BLOCK_C: tl.constexpr,
     BLOCK_R: tl.constexpr,
 ):
@@ -436,7 +516,16 @@ def _norms_fused(A32, out32, R, C, s_batch, rs, cs, num_batches, dev):
     BLOCK_R = 64
     nw = 1 if BLOCK_C <= 64 else 4
     _norms_sort_kernel[(num_batches,)](
-        A32, out32, R, C, s_batch, rs, cs, BLOCK_C, BLOCK_R, num_warps=nw,
+        A32,
+        out32,
+        R,
+        C,
+        s_batch,
+        rs,
+        cs,
+        BLOCK_C,
+        BLOCK_R,
+        num_warps=nw,
     )
 
 
@@ -448,9 +537,13 @@ def _norms_fused(A32, out32, R, C, s_batch, rs, cs, num_batches, dev):
 # ---------------------------------------------------------------------------
 @triton.jit
 def _norms_kernel(
-    A_ptr, Out_ptr,
-    R, C,
-    s_batch, rs, cs,
+    A_ptr,
+    Out_ptr,
+    R,
+    C,
+    s_batch,
+    rs,
+    cs,
     BLOCK_R: tl.constexpr,
     BLOCK_C: tl.constexpr,
 ):
@@ -464,7 +557,9 @@ def _norms_kernel(
     for r0 in tl.range(0, R, BLOCK_R):
         rows = r0 + rr
         m = (rows[:, None] < R) & ((c0 + cc)[None, :] < C)
-        t = tl.load(base + rows[:, None] * rs + (c0 + cc)[None, :] * cs, mask=m, other=0.0)
+        t = tl.load(
+            base + rows[:, None] * rs + (c0 + cc)[None, :] * cs, mask=m, other=0.0
+        )
         acc += tl.sum(t * t, axis=0)
     sv = tl.sqrt(tl.maximum(acc, 0.0))
     tl.store(Out_ptr + pid_b * C + c0 + cc, sv, mask=(c0 + cc) < C)
@@ -475,7 +570,16 @@ def _norms_path(A32, out32, R, C, s_batch, rs, cs, num_batches, dev):
     BLOCK_R = 64
     s_work = torch.empty((num_batches, C), dtype=torch.float32, device=dev)
     _norms_kernel[(num_batches, triton.cdiv(C, BLOCK_C))](
-        A32, s_work, R, C, s_batch, rs, cs, BLOCK_R, BLOCK_C, num_warps=8,
+        A32,
+        s_work,
+        R,
+        C,
+        s_batch,
+        rs,
+        cs,
+        BLOCK_R,
+        BLOCK_C,
+        num_warps=8,
     )
     BLOCK_C2 = max(2, triton.next_power_of_2(C))
     _finalize_kernel[(num_batches,)](s_work, out32, C, False, BLOCK_C2, num_warps=4)
@@ -489,8 +593,18 @@ def _launch_reg(A32, out32, R, C, s_batch, rs, cs, num_batches, dev):
     ncol = C + (C & 1)
     BLOCK_C = max(2, triton.next_power_of_2(ncol))
     _svdvals_reg_kernel[(num_batches,)](
-        A32, out32, R, C, s_batch, rs, cs,
-        40, ROT_EPS, BLOCK_R, BLOCK_C, num_warps=1,
+        A32,
+        out32,
+        R,
+        C,
+        s_batch,
+        rs,
+        cs,
+        40,
+        ROT_EPS,
+        BLOCK_R,
+        BLOCK_C,
+        num_warps=1,
     )
 
 
@@ -498,7 +612,16 @@ def _init_scratch(A32, R, C, NCOLS, s_batch, rs, cs, num_batches, dev):
     scratch = torch.empty((num_batches, NCOLS, R), dtype=torch.float32, device=dev)
     BLOCK_COPY = 1024
     _init_kernel[(num_batches, triton.cdiv(R * NCOLS, BLOCK_COPY))](
-        A32, scratch, R, C, NCOLS, s_batch, rs, cs, BLOCK_COPY, num_warps=4,
+        A32,
+        scratch,
+        R,
+        C,
+        NCOLS,
+        s_batch,
+        rs,
+        cs,
+        BLOCK_COPY,
+        num_warps=4,
     )
     return scratch
 
@@ -507,18 +630,36 @@ def _run_pairs(scratch, out32, R, C, NCOLS, num_batches, dev, sweeps, step_limit
     n = C + (C & 1)
     half = n // 2
     BLOCK_R = max(2, triton.next_power_of_2(R))
-    nw = 1 if BLOCK_R <= 64 else (2 if BLOCK_R <= 256 else (4 if BLOCK_R <= 1024 else 8))
+    nw = (
+        1 if BLOCK_R <= 64 else (2 if BLOCK_R <= 256 else (4 if BLOCK_R <= 1024 else 8))
+    )
     _fused_sweep_kernel[(num_batches, half)](
-        scratch, R, C, NCOLS, sweeps, step_limit, ROT_EPS, BLOCK_R, num_warps=nw,
+        scratch,
+        R,
+        C,
+        NCOLS,
+        sweeps,
+        step_limit,
+        ROT_EPS,
+        BLOCK_R,
+        num_warps=nw,
     )
     if C <= 128:
         _finalize_from_W[(num_batches,)](
-            scratch, out32, R, C, NCOLS,
-            triton.next_power_of_2(C), 64, num_warps=4,
+            scratch,
+            out32,
+            R,
+            C,
+            NCOLS,
+            triton.next_power_of_2(C),
+            64,
+            num_warps=4,
         )
     else:
         s_work = torch.empty((num_batches, C), dtype=torch.float32, device=dev)
-        _norm_kernel[(num_batches, C)](scratch, s_work, R, C, NCOLS, BLOCK_R, num_warps=nw)
+        _norm_kernel[(num_batches, C)](
+            scratch, s_work, R, C, NCOLS, BLOCK_R, num_warps=nw
+        )
         BLOCK_C = max(2, triton.next_power_of_2(C))
         _finalize_kernel[(num_batches,)](s_work, out32, C, False, BLOCK_C, num_warps=4)
 
@@ -531,17 +672,35 @@ def _gram_path(A32, out32, R, C, s_batch, rs, cs, num_batches, dev):
     CHUNK = 64
     ncblocks = triton.cdiv(C, BLOCK)
     _gram_dot_kernel[(num_batches, ncblocks * ncblocks)](
-        scratch, G, R, C, NCOLS, ncblocks, BLOCK, CHUNK, num_warps=8,
+        scratch,
+        G,
+        R,
+        C,
+        NCOLS,
+        ncblocks,
+        BLOCK,
+        CHUNK,
+        num_warps=8,
     )
     # one-sided Jacobi on the symmetric G: sigma(G) = sigma(A)^2
     gc = C
     n = gc + (gc & 1)
     half = n // 2
     BLOCK_R = max(2, triton.next_power_of_2(gc))
-    nw = 1 if BLOCK_R <= 64 else (2 if BLOCK_R <= 256 else (4 if BLOCK_R <= 1024 else 8))
+    nw = (
+        1 if BLOCK_R <= 64 else (2 if BLOCK_R <= 256 else (4 if BLOCK_R <= 1024 else 8))
+    )
     sweeps = 1
     _fused_sweep_kernel[(num_batches, half)](
-        G, gc, gc, gc, sweeps, (n - 1) // 8, ROT_EPS, BLOCK_R, num_warps=nw,
+        G,
+        gc,
+        gc,
+        gc,
+        sweeps,
+        (n - 1) // 8,
+        ROT_EPS,
+        BLOCK_R,
+        num_warps=nw,
     )
     s_work = torch.empty((num_batches, gc), dtype=torch.float32, device=dev)
     _norm_kernel[(num_batches, gc)](G, s_work, gc, gc, gc, BLOCK_R, num_warps=nw)

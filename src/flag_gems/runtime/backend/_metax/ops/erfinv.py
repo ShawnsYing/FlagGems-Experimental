@@ -14,11 +14,11 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
 
 
 @triton.jit
@@ -67,8 +67,9 @@ def _erfinv_poly_lp(x):
 
 
 @triton.jit
-def _erfinv_kernel(x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr,
-                   DIVISIBLE: tl.constexpr):
+def _erfinv_kernel(
+    x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr, DIVISIBLE: tl.constexpr
+):
     pid = tl.program_id(0)
     offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     if DIVISIBLE:
@@ -84,8 +85,9 @@ def _erfinv_kernel(x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr,
 
 
 @triton.jit
-def _erfinv_kernel_lp(x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr,
-                      DIVISIBLE: tl.constexpr):
+def _erfinv_kernel_lp(
+    x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr, DIVISIBLE: tl.constexpr
+):
     pid = tl.program_id(0)
     offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     if DIVISIBLE:
@@ -126,32 +128,38 @@ def erfinv(x):
         if n > _SMALL_N:
             BLOCK = 1024
             grid = (triton.cdiv(n, BLOCK),)
-            _erfinv_kernel_lp[grid](x, out, n, BLOCK_SIZE=BLOCK, num_warps=2,
-                                    DIVISIBLE=(n % BLOCK == 0))
+            _erfinv_kernel_lp[grid](
+                x, out, n, BLOCK_SIZE=BLOCK, num_warps=2, DIVISIBLE=(n % BLOCK == 0)
+            )
         elif n > _TINY_N:
             BLOCK = 1024
             grid = (triton.cdiv(n, BLOCK),)
-            _erfinv_kernel_lp[grid](x, out, n, BLOCK_SIZE=BLOCK, num_warps=4,
-                                    DIVISIBLE=(n % BLOCK == 0))
+            _erfinv_kernel_lp[grid](
+                x, out, n, BLOCK_SIZE=BLOCK, num_warps=4, DIVISIBLE=(n % BLOCK == 0)
+            )
         else:
             BLOCK = 256
             grid = (triton.cdiv(n, BLOCK),)
-            _erfinv_kernel_lp[grid](x, out, n, BLOCK_SIZE=BLOCK, num_warps=2,
-                                    DIVISIBLE=(n % BLOCK == 0))
+            _erfinv_kernel_lp[grid](
+                x, out, n, BLOCK_SIZE=BLOCK, num_warps=2, DIVISIBLE=(n % BLOCK == 0)
+            )
     else:
         if n > _SMALL_N:
             BLOCK = 1024
             grid = (triton.cdiv(n, BLOCK),)
-            _erfinv_kernel[grid](x, out, n, BLOCK_SIZE=BLOCK, num_warps=2,
-                                 DIVISIBLE=(n % BLOCK == 0))
+            _erfinv_kernel[grid](
+                x, out, n, BLOCK_SIZE=BLOCK, num_warps=2, DIVISIBLE=(n % BLOCK == 0)
+            )
         elif n > _TINY_N:
             BLOCK = 1024
             grid = (triton.cdiv(n, BLOCK),)
-            _erfinv_kernel[grid](x, out, n, BLOCK_SIZE=BLOCK, num_warps=4,
-                                 DIVISIBLE=(n % BLOCK == 0))
+            _erfinv_kernel[grid](
+                x, out, n, BLOCK_SIZE=BLOCK, num_warps=4, DIVISIBLE=(n % BLOCK == 0)
+            )
         else:
             BLOCK = 256
             grid = (triton.cdiv(n, BLOCK),)
-            _erfinv_kernel[grid](x, out, n, BLOCK_SIZE=BLOCK, num_warps=2,
-                                 DIVISIBLE=(n % BLOCK == 0))
+            _erfinv_kernel[grid](
+                x, out, n, BLOCK_SIZE=BLOCK, num_warps=2, DIVISIBLE=(n % BLOCK == 0)
+            )
     return out

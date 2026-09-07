@@ -14,13 +14,12 @@
 
 import logging
 from typing import Optional
-
 import torch
 import triton
-
 from flag_gems.utils import pointwise_dynamic
 
 logger = logging.getLogger(__name__)
+
 
 _FALLBACK_KEYSET = torch._C.DispatchKeySet(
     torch._C.DispatchKey.CompositeExplicitAutograd

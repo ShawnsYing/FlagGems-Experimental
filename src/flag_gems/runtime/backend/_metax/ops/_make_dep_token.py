@@ -1,10 +1,10 @@
 import logging
-
 import torch
-
 from flag_gems.runtime import device
 
 logger = logging.getLogger("flag_gems." + __name__)
+
+
 device_ = device
 
 

@@ -14,12 +14,13 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import numpy as np
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
 
 _BLOCK = 1024
 _RBLOCK = 1024
@@ -41,11 +42,22 @@ def _div_rn32(num, sp):
 
 
 @triton.jit
-def _histc_hist_kernel(inp_ptr, out_ptr, mm_ptr, n_elements, mn, mx, bn,
-                       IS_FLOAT: tl.constexpr, IS_FP64: tl.constexpr,
-                       IS_INT: tl.constexpr, USE_PTR: tl.constexpr,
-                       NO_MASK: tl.constexpr,
-                       NB: tl.constexpr, BLOCK: tl.constexpr):
+def _histc_hist_kernel(
+    inp_ptr,
+    out_ptr,
+    mm_ptr,
+    n_elements,
+    mn,
+    mx,
+    bn,
+    IS_FLOAT: tl.constexpr,
+    IS_FP64: tl.constexpr,
+    IS_INT: tl.constexpr,
+    USE_PTR: tl.constexpr,
+    NO_MASK: tl.constexpr,
+    NB: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
     pid = tl.program_id(0).to(tl.int64)
     offs = pid * BLOCK + tl.arange(0, BLOCK).to(tl.int64)
     if NO_MASK:
@@ -99,17 +111,29 @@ def _histc_hist_kernel(inp_ptr, out_ptr, mm_ptr, n_elements, mn, mx, bn,
             hc = h.to(tl.float64)
         else:
             hc = h.to(tl.float32)
-    tl.atomic_add(out_ptr + tl.arange(0, NB), hc,
-                  mask=tl.arange(0, NB) < bn.to(tl.int32))
+    tl.atomic_add(
+        out_ptr + tl.arange(0, NB), hc, mask=tl.arange(0, NB) < bn.to(tl.int32)
+    )
 
 
 @triton.jit
-def _histc_acc_kernel(inp_ptr, out_ptr, mm_ptr, n_elements, mn, mx, bn,
-                      IS_FLOAT: tl.constexpr, IS_FP64: tl.constexpr,
-                      IS_INT: tl.constexpr, USE_PTR: tl.constexpr,
-                      NO_MASK: tl.constexpr,
-                      NB: tl.constexpr, BLOCK: tl.constexpr,
-                      ITERS: tl.constexpr):
+def _histc_acc_kernel(
+    inp_ptr,
+    out_ptr,
+    mm_ptr,
+    n_elements,
+    mn,
+    mx,
+    bn,
+    IS_FLOAT: tl.constexpr,
+    IS_FP64: tl.constexpr,
+    IS_INT: tl.constexpr,
+    USE_PTR: tl.constexpr,
+    NO_MASK: tl.constexpr,
+    NB: tl.constexpr,
+    BLOCK: tl.constexpr,
+    ITERS: tl.constexpr,
+):
     # Register-accumulate variant: each block covers ITERS*BLOCK elements with
     # per-block histograms accumulated in registers, then one atomic merge.
     pid = tl.program_id(0).to(tl.int64)
@@ -168,15 +192,26 @@ def _histc_acc_kernel(inp_ptr, out_ptr, mm_ptr, n_elements, mn, mx, bn,
         hidx = tl.where(valid, idx, NB - 1)
         h = tl.histogram(hidx, num_bins=NB)
         acc += h
-    tl.atomic_add(out_ptr + tl.arange(0, NB), acc,
-                  mask=tl.arange(0, NB) < bn.to(tl.int32))
+    tl.atomic_add(
+        out_ptr + tl.arange(0, NB), acc, mask=tl.arange(0, NB) < bn.to(tl.int32)
+    )
 
 
 @triton.jit
-def _histc_atomic_kernel(inp_ptr, out_ptr, mm_ptr, n_elements, mn, mx, bn,
-                         IS_FLOAT: tl.constexpr, IS_FP64: tl.constexpr,
-                         IS_INT: tl.constexpr, USE_PTR: tl.constexpr,
-                         BLOCK: tl.constexpr):
+def _histc_atomic_kernel(
+    inp_ptr,
+    out_ptr,
+    mm_ptr,
+    n_elements,
+    mn,
+    mx,
+    bn,
+    IS_FLOAT: tl.constexpr,
+    IS_FP64: tl.constexpr,
+    IS_INT: tl.constexpr,
+    USE_PTR: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
     pid = tl.program_id(0).to(tl.int64)
     offs = pid * BLOCK + tl.arange(0, BLOCK).to(tl.int64)
     mask = offs < n_elements
@@ -214,18 +249,19 @@ def _histc_atomic_kernel(inp_ptr, out_ptr, mm_ptr, n_elements, mn, mx, bn,
 
 
 @triton.jit
-def _block_minmax_kernel(inp_ptr, mn_ptr, mx_ptr, n_elements,
-                         IS_FLOAT: tl.constexpr, BLOCK: tl.constexpr):
+def _block_minmax_kernel(
+    inp_ptr, mn_ptr, mx_ptr, n_elements, IS_FLOAT: tl.constexpr, BLOCK: tl.constexpr
+):
     pid = tl.program_id(0).to(tl.int64)
     offs = pid * BLOCK + tl.arange(0, BLOCK).to(tl.int64)
     mask = offs < n_elements
     x = tl.load(inp_ptr + offs, mask=mask, other=0)
     if IS_FLOAT:
-        xmn = tl.where(mask, x, float('inf'))
-        xmx = tl.where(mask, x, float('-inf'))
+        xmn = tl.where(mask, x, float("inf"))
+        xmx = tl.where(mask, x, float("-inf"))
     else:
         xmn = tl.where(mask, x.to(tl.int64), 2**63 - 1)
-        xmx = tl.where(mask, x.to(tl.int64), -2**63)
+        xmx = tl.where(mask, x.to(tl.int64), -(2**63))
     mn = tl.min(xmn, axis=0)
     mx = tl.max(xmx, axis=0)
     tl.store(mn_ptr + pid, mn)
@@ -233,19 +269,25 @@ def _block_minmax_kernel(inp_ptr, mn_ptr, mx_ptr, n_elements,
 
 
 @triton.jit
-def _final_minmax_kernel(mn_ptr, mx_ptr, out_ptr, G,
-                         IS_FLOAT: tl.constexpr, IS_FP64: tl.constexpr,
-                         BLOCK: tl.constexpr):
+def _final_minmax_kernel(
+    mn_ptr,
+    mx_ptr,
+    out_ptr,
+    G,
+    IS_FLOAT: tl.constexpr,
+    IS_FP64: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
     if IS_FLOAT:
         if IS_FP64:
-            hi = tl.full((), float('inf'), tl.float64)
-            lo = tl.full((), float('-inf'), tl.float64)
+            hi = tl.full((), float("inf"), tl.float64)
+            lo = tl.full((), float("-inf"), tl.float64)
         else:
-            hi = float('inf')
-            lo = float('-inf')
+            hi = float("inf")
+            lo = float("-inf")
     else:
         hi = 2**63 - 1
-        lo = -2**63
+        lo = -(2**63)
     mn_acc = hi
     mx_acc = lo
     for start in tl.range(0, G, BLOCK):
@@ -274,7 +316,7 @@ def histc(inp, bins=100, min=0, max=0):
         inp = inp.contiguous()
     dt = inp.dtype
     is_float = dt.is_floating_point
-    is_fp64 = (dt == torch.float64)
+    is_fp64 = dt == torch.float64
     n = inp.numel()
 
     out = torch.zeros(bins_i, dtype=dt, device=inp.device)
@@ -287,31 +329,41 @@ def histc(inp, bins=100, min=0, max=0):
         G = triton.cdiv(n, _RBLOCK)
         pdtype = dt if is_float else torch.int64
         if is_fp64:
-            mm = torch.tensor([min_v, max_v, float(bins_i)],
-                              dtype=torch.float64, device=inp.device)
+            mm = torch.tensor(
+                [min_v, max_v, float(bins_i)], dtype=torch.float64, device=inp.device
+            )
         elif is_float:
-            mm = torch.tensor([min_v, max_v, float(bins_i)],
-                              dtype=torch.float32, device=inp.device)
+            mm = torch.tensor(
+                [min_v, max_v, float(bins_i)], dtype=torch.float32, device=inp.device
+            )
         else:
-            mm = torch.tensor([int(min_v), int(max_v), int(bins_i)],
-                              dtype=torch.int64, device=inp.device)
+            mm = torch.tensor(
+                [int(min_v), int(max_v), int(bins_i)],
+                dtype=torch.int64,
+                device=inp.device,
+            )
         mn_part = torch.empty(G, dtype=pdtype, device=inp.device)
         mx_part = torch.empty(G, dtype=pdtype, device=inp.device)
-        _block_minmax_kernel[(G,)](inp, mn_part, mx_part, n,
-                                   IS_FLOAT=is_float, BLOCK=_RBLOCK)
-        _final_minmax_kernel[(1,)](mn_part, mx_part, mm, G,
-                                   IS_FLOAT=is_float, IS_FP64=is_fp64,
-                                   BLOCK=_RBLOCK)
+        _block_minmax_kernel[(G,)](
+            inp, mn_part, mx_part, n, IS_FLOAT=is_float, BLOCK=_RBLOCK
+        )
+        _final_minmax_kernel[(1,)](
+            mn_part, mx_part, mm, G, IS_FLOAT=is_float, IS_FP64=is_fp64, BLOCK=_RBLOCK
+        )
         use_ptr = True
     elif is_float and not is_fp64:
         pass
     else:
         if is_fp64:
-            mm = torch.tensor([min_v, max_v, float(bins_i)],
-                              dtype=torch.float64, device=inp.device)
+            mm = torch.tensor(
+                [min_v, max_v, float(bins_i)], dtype=torch.float64, device=inp.device
+            )
         else:
-            mm = torch.tensor([int(min_v), int(max_v), int(bins_i)],
-                              dtype=torch.int64, device=inp.device)
+            mm = torch.tensor(
+                [int(min_v), int(max_v), int(bins_i)],
+                dtype=torch.int64,
+                device=inp.device,
+            )
         use_ptr = True
 
     if mm is None:
@@ -334,30 +386,76 @@ def histc(inp, bins=100, min=0, max=0):
         if n > _HIST_ACC_MIN:
             span = 4 * _HIST_BLOCK
             grid = (triton.cdiv(n, span),)
-            _histc_acc_kernel[grid](inp, out, mm, n, mn_arg, mx_arg, bn_arg,
-                                    IS_FLOAT=is_float, IS_FP64=is_fp64,
-                                    IS_INT=not is_float, USE_PTR=use_ptr,
-                                    NO_MASK=(n % span == 0),
-                                    NB=nb, BLOCK=_HIST_BLOCK, num_warps=_HIST_WARPS,
-                                    ITERS=4)
+            _histc_acc_kernel[grid](
+                inp,
+                out,
+                mm,
+                n,
+                mn_arg,
+                mx_arg,
+                bn_arg,
+                IS_FLOAT=is_float,
+                IS_FP64=is_fp64,
+                IS_INT=not is_float,
+                USE_PTR=use_ptr,
+                NO_MASK=(n % span == 0),
+                NB=nb,
+                BLOCK=_HIST_BLOCK,
+                num_warps=_HIST_WARPS,
+                ITERS=4,
+            )
         elif n > 65536:
             grid = (triton.cdiv(n, _HIST_BLOCK),)
-            _histc_hist_kernel[grid](inp, out, mm, n, mn_arg, mx_arg, bn_arg,
-                                     IS_FLOAT=is_float, IS_FP64=is_fp64,
-                                     IS_INT=not is_float, USE_PTR=use_ptr,
-                                     NO_MASK=(n % _HIST_BLOCK == 0),
-                                     NB=nb, BLOCK=_HIST_BLOCK, num_warps=4)
+            _histc_hist_kernel[grid](
+                inp,
+                out,
+                mm,
+                n,
+                mn_arg,
+                mx_arg,
+                bn_arg,
+                IS_FLOAT=is_float,
+                IS_FP64=is_fp64,
+                IS_INT=not is_float,
+                USE_PTR=use_ptr,
+                NO_MASK=(n % _HIST_BLOCK == 0),
+                NB=nb,
+                BLOCK=_HIST_BLOCK,
+                num_warps=4,
+            )
         else:
             grid = (triton.cdiv(n, _SMALL_BLOCK),)
-            _histc_hist_kernel[grid](inp, out, mm, n, mn_arg, mx_arg, bn_arg,
-                                     IS_FLOAT=is_float, IS_FP64=is_fp64,
-                                     IS_INT=not is_float, USE_PTR=use_ptr,
-                                     NO_MASK=(n % _SMALL_BLOCK == 0),
-                                     NB=nb, BLOCK=_SMALL_BLOCK, num_warps=_HIST_WARPS)
+            _histc_hist_kernel[grid](
+                inp,
+                out,
+                mm,
+                n,
+                mn_arg,
+                mx_arg,
+                bn_arg,
+                IS_FLOAT=is_float,
+                IS_FP64=is_fp64,
+                IS_INT=not is_float,
+                USE_PTR=use_ptr,
+                NO_MASK=(n % _SMALL_BLOCK == 0),
+                NB=nb,
+                BLOCK=_SMALL_BLOCK,
+                num_warps=_HIST_WARPS,
+            )
     else:
         grid = (triton.cdiv(n, _BLOCK),)
-        _histc_atomic_kernel[grid](inp, out, mm, n, mn_arg, mx_arg, bn_arg,
-                                   IS_FLOAT=is_float, IS_FP64=is_fp64,
-                                   IS_INT=not is_float, USE_PTR=use_ptr,
-                                   BLOCK=_BLOCK)
+        _histc_atomic_kernel[grid](
+            inp,
+            out,
+            mm,
+            n,
+            mn_arg,
+            mx_arg,
+            bn_arg,
+            IS_FLOAT=is_float,
+            IS_FP64=is_fp64,
+            IS_INT=not is_float,
+            USE_PTR=use_ptr,
+            BLOCK=_BLOCK,
+        )
     return out

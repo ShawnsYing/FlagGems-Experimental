@@ -27,16 +27,15 @@ maintaining full memory bandwidth utilization.
 """
 
 import logging
-
 import torch
 import triton
 import triton.language as tl
-
 import flag_gems
 from flag_gems.runtime import torch_device_fn
 from flag_gems.utils import libentry
 
 logger = logging.getLogger(__name__)
+
 
 # Persistent kernel parameters tuned for MetaX GPU.
 # 256 blocks with 16384 elements each covers most tensor sizes

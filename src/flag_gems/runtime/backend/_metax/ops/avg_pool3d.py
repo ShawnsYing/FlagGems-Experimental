@@ -13,11 +13,9 @@
 # limitations under the License.
 
 import logging
-
 import torch
 import triton
 import triton.language as tl
-
 from flag_gems.utils import libentry
 
 logger = logging.getLogger(__name__)

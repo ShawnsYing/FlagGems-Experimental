@@ -1,9 +1,7 @@
 import logging
-
 import torch
 import triton
 import triton.language as tl
-
 from flag_gems.runtime import torch_device_fn
 from flag_gems.utils.random_utils import (
     philox_backend_seed_offset,
@@ -11,6 +9,8 @@ from flag_gems.utils.random_utils import (
 )
 
 logger = logging.getLogger("flag_gems." + __name__)
+
+
 # eps for double, float, float16, bfloat16
 # Precomputed constants - inlined as literals in JIT functions below
 # eps = [2.220446049250313e-16, 1.1920928955078125e-07, 0.0009765625, 0.0078125]

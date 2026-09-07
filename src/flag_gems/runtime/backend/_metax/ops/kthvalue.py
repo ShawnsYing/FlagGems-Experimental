@@ -14,22 +14,23 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 import torch
 import triton
 import triton.language as tl
 
-_CB = 4096          # radix chunk size
-_D1_MAX = 8192      # max single-block row size (32-bit dtypes)
-_D1_MAX_64 = 4096   # max single-block row size (64-bit dtypes)
-_SMALL_K = 8        # use iterative top-k selection when k <= _SMALL_K
+logger = logging.getLogger(__name__)
+
+
+_CB = 4096  # radix chunk size
+_D1_MAX = 8192  # max single-block row size (32-bit dtypes)
+_D1_MAX_64 = 4096  # max single-block row size (64-bit dtypes)
+_SMALL_K = 8  # use iterative top-k selection when k <= _SMALL_K
 _BIG = tl.constexpr(1 << 62)
 # host-side plain constants (passed into kernels as constexpr args)
-_HF_FLT_MAX = 3.4028234663852886e+38
-_HF_DBL_MAX = 1.7976931348623157e+308
+_HF_FLT_MAX = 3.4028234663852886e38
+_HF_DBL_MAX = 1.7976931348623157e308
 _HF_HALF_MAX = 65504.0
-_HF_BF16_MAX = 3.3895313892515355e+38
+_HF_BF16_MAX = 3.3895313892515355e38
 _HF_I32_MAX = 2147483647
 _HF_I64_MAX = 9223372036854775807
 # kernel-side constexpr constants
@@ -104,11 +105,17 @@ def _unmap(key, IS_FP: tl.constexpr, W: tl.constexpr):
 # Path 1a: D == 1
 # ---------------------------------------------------------------------------
 @triton.jit
-def _kth_d1_kernel(inp_ptr, shape_ptr, stride_ptr, out_v_ptr, out_i_ptr,
-                   DIM: tl.constexpr, RANK: tl.constexpr):
+def _kth_d1_kernel(
+    inp_ptr,
+    shape_ptr,
+    stride_ptr,
+    out_v_ptr,
+    out_i_ptr,
+    DIM: tl.constexpr,
+    RANK: tl.constexpr,
+):
     pid = tl.program_id(0).to(tl.int64)
     base = _decompose(pid, shape_ptr, stride_ptr, DIM, RANK)
-    sd = tl.load(stride_ptr + DIM).to(tl.int64)
     x = tl.load(inp_ptr + base)
     tl.store(out_v_ptr + pid, x)
     tl.store(out_i_ptr + pid, 0)
@@ -118,10 +125,22 @@ def _kth_d1_kernel(inp_ptr, shape_ptr, stride_ptr, out_v_ptr, out_i_ptr,
 # Path 1b: small k (k <= 8): iterative min-removal selection, no sort
 # ---------------------------------------------------------------------------
 @triton.jit
-def _kth_smallk_kernel(inp_ptr, shape_ptr, stride_ptr, out_v_ptr, out_i_ptr,
-                       D, k, SENT: tl.constexpr, IS_FP: tl.constexpr,
-                       UPCAST16: tl.constexpr, LAST_TIE: tl.constexpr,
-                       BLOCK: tl.constexpr, DIM: tl.constexpr, RANK: tl.constexpr):
+def _kth_smallk_kernel(
+    inp_ptr,
+    shape_ptr,
+    stride_ptr,
+    out_v_ptr,
+    out_i_ptr,
+    D,
+    k,
+    SENT: tl.constexpr,
+    IS_FP: tl.constexpr,
+    UPCAST16: tl.constexpr,
+    LAST_TIE: tl.constexpr,
+    BLOCK: tl.constexpr,
+    DIM: tl.constexpr,
+    RANK: tl.constexpr,
+):
     pid = tl.program_id(0).to(tl.int64)
     base = _decompose(pid, shape_ptr, stride_ptr, DIM, RANK)
     sd = tl.load(stride_ptr + DIM).to(tl.int64)
@@ -184,10 +203,21 @@ def _kth_smallk_kernel(inp_ptr, shape_ptr, stride_ptr, out_v_ptr, out_i_ptr,
 # Path 1c: large k (> 8): per-slice in-register sort
 # ---------------------------------------------------------------------------
 @triton.jit
-def _kth_single_kernel(inp_ptr, shape_ptr, stride_ptr, out_v_ptr, out_i_ptr,
-                       D, k, SENT: tl.constexpr, IS_FP: tl.constexpr,
-                       UPCAST16: tl.constexpr, BLOCK: tl.constexpr,
-                       DIM: tl.constexpr, RANK: tl.constexpr):
+def _kth_single_kernel(
+    inp_ptr,
+    shape_ptr,
+    stride_ptr,
+    out_v_ptr,
+    out_i_ptr,
+    D,
+    k,
+    SENT: tl.constexpr,
+    IS_FP: tl.constexpr,
+    UPCAST16: tl.constexpr,
+    BLOCK: tl.constexpr,
+    DIM: tl.constexpr,
+    RANK: tl.constexpr,
+):
     pid = tl.program_id(0).to(tl.int64)
     base = _decompose(pid, shape_ptr, stride_ptr, DIM, RANK)
     sd = tl.load(stride_ptr + DIM).to(tl.int64)
@@ -239,8 +269,14 @@ def _kth_single_kernel(inp_ptr, shape_ptr, stride_ptr, out_v_ptr, out_i_ptr,
             k_neg = k <= n_neg
             k_pos = (k > n_neg + fin) & (k <= n_neg + fin + n_pos)
             k_nan = k > n_neg + fin + n_pos
-            v = tl.where(k_neg, _NEG_INF, tl.where(k_pos, _POS_INF, tl.where(k_nan, nan_v, v)))
-            idx = tl.where(k_neg, neg_idx, tl.where(k_pos, pos_idx, tl.where(k_nan, nan_idx, fin_idx)))
+            v = tl.where(
+                k_neg, _NEG_INF, tl.where(k_pos, _POS_INF, tl.where(k_nan, nan_v, v))
+            )
+            idx = tl.where(
+                k_neg,
+                neg_idx,
+                tl.where(k_pos, pos_idx, tl.where(k_nan, nan_idx, fin_idx)),
+            )
         v = tl.where(v == 0, tl.zeros_like(v), v)  # normalize -0.0 -> +0.0
     else:
         s = tl.sort(x, dim=0)
@@ -264,10 +300,24 @@ def _kth_single_kernel(inp_ptr, shape_ptr, stride_ptr, out_v_ptr, out_i_ptr,
 # Path 2: radix-select pipeline (D > D1_MAX)
 # ---------------------------------------------------------------------------
 @triton.jit
-def _radix_count_kernel(inp_ptr, shape_ptr, stride_ptr, hist_ptr, lo_ptr,
-                        D, S, G, DIGIT: tl.constexpr, NBYTES: tl.constexpr,
-                        CB: tl.constexpr, IS_FP: tl.constexpr, W: tl.constexpr,
-                        UP16: tl.constexpr, DIM: tl.constexpr, RANK: tl.constexpr):
+def _radix_count_kernel(
+    inp_ptr,
+    shape_ptr,
+    stride_ptr,
+    hist_ptr,
+    lo_ptr,
+    D,
+    S,
+    G,
+    DIGIT: tl.constexpr,
+    NBYTES: tl.constexpr,
+    CB: tl.constexpr,
+    IS_FP: tl.constexpr,
+    W: tl.constexpr,
+    UP16: tl.constexpr,
+    DIM: tl.constexpr,
+    RANK: tl.constexpr,
+):
     pid = tl.program_id(0).to(tl.int64)
     s = pid // G
     c = pid % G
@@ -292,8 +342,16 @@ def _radix_count_kernel(inp_ptr, shape_ptr, stride_ptr, hist_ptr, lo_ptr,
 
 
 @triton.jit
-def _radix_narrow_kernel(hist_ptr, lo_ptr, krem_ptr, vkey_ptr, S, k,
-                         DIGIT: tl.constexpr, NBYTES: tl.constexpr):
+def _radix_narrow_kernel(
+    hist_ptr,
+    lo_ptr,
+    krem_ptr,
+    vkey_ptr,
+    S,
+    k,
+    DIGIT: tl.constexpr,
+    NBYTES: tl.constexpr,
+):
     pid = tl.program_id(0).to(tl.int64)
     offs = tl.arange(0, 256).to(tl.int64)
     h = tl.load(hist_ptr + pid * 256 + offs)
@@ -320,9 +378,23 @@ def _radix_narrow_kernel(hist_ptr, lo_ptr, krem_ptr, vkey_ptr, S, k,
 
 
 @triton.jit
-def _radix_lesseq_kernel(inp_ptr, shape_ptr, stride_ptr, less_ptr, eq_ptr, vkey_ptr,
-                         D, S, G, CB: tl.constexpr, IS_FP: tl.constexpr, W: tl.constexpr,
-                         UP16: tl.constexpr, DIM: tl.constexpr, RANK: tl.constexpr):
+def _radix_lesseq_kernel(
+    inp_ptr,
+    shape_ptr,
+    stride_ptr,
+    less_ptr,
+    eq_ptr,
+    vkey_ptr,
+    D,
+    S,
+    G,
+    CB: tl.constexpr,
+    IS_FP: tl.constexpr,
+    W: tl.constexpr,
+    UP16: tl.constexpr,
+    DIM: tl.constexpr,
+    RANK: tl.constexpr,
+):
     pid = tl.program_id(0).to(tl.int64)
     s = pid // G
     c = pid % G
@@ -336,20 +408,41 @@ def _radix_lesseq_kernel(inp_ptr, shape_ptr, stride_ptr, less_ptr, eq_ptr, vkey_
         x = x.to(tl.float32)
     key = _to_key(x, IS_FP, W)
     if W == 32:
-        less = tl.sum(tl.where(mask & ((key ^ _INT_MIN32) < (vkey ^ _INT_MIN32)), 1, 0), axis=0)
+        less = tl.sum(
+            tl.where(mask & ((key ^ _INT_MIN32) < (vkey ^ _INT_MIN32)), 1, 0), axis=0
+        )
     else:
-        less = tl.sum(tl.where(mask & ((key ^ _INT_MIN64) < (vkey ^ _INT_MIN64)), 1, 0), axis=0)
+        less = tl.sum(
+            tl.where(mask & ((key ^ _INT_MIN64) < (vkey ^ _INT_MIN64)), 1, 0), axis=0
+        )
     eq = tl.sum(tl.where(mask & (key == vkey), 1, 0), axis=0)
     tl.store(less_ptr + pid, less)
     tl.store(eq_ptr + pid, eq)
 
 
 @triton.jit
-def _radix_index_kernel(inp_ptr, shape_ptr, stride_ptr, vkey_ptr, less_ptr, eq_ptr,
-                        out_v_ptr, out_i_ptr, D, S, G, k, CB: tl.constexpr,
-                        IS_FP: tl.constexpr, W: tl.constexpr, IS_FP16: tl.constexpr,
-                        IS_BF16: tl.constexpr, DIM: tl.constexpr, RANK: tl.constexpr,
-                        BLOCK: tl.constexpr):
+def _radix_index_kernel(
+    inp_ptr,
+    shape_ptr,
+    stride_ptr,
+    vkey_ptr,
+    less_ptr,
+    eq_ptr,
+    out_v_ptr,
+    out_i_ptr,
+    D,
+    S,
+    G,
+    k,
+    CB: tl.constexpr,
+    IS_FP: tl.constexpr,
+    W: tl.constexpr,
+    IS_FP16: tl.constexpr,
+    IS_BF16: tl.constexpr,
+    DIM: tl.constexpr,
+    RANK: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
     pid = tl.program_id(0).to(tl.int64)
     base = _decompose(pid, shape_ptr, stride_ptr, DIM, RANK)
     sd = tl.load(stride_ptr + DIM).to(tl.int64)
@@ -406,8 +499,10 @@ def _get_meta(shape, stride, device):
     key = (shape, stride, device)
     t = _meta.get(key)
     if t is None:
-        t = (torch.tensor(shape, dtype=torch.int64, device=device),
-             torch.tensor(stride, dtype=torch.int64, device=device))
+        t = (
+            torch.tensor(shape, dtype=torch.int64, device=device),
+            torch.tensor(stride, dtype=torch.int64, device=device),
+        )
         _meta[key] = t
     return t
 
@@ -455,8 +550,9 @@ def kthvalue(input, k, dim=-1, keepdim=False):
     dt = inp.dtype
     is_fp = dt.is_floating_point
     if D == 1:
-        _kth_d1_kernel[(S,)](inp, shape_t, stride_t, values, indices,
-                             DIM=dim, RANK=rank, num_warps=1)
+        _kth_d1_kernel[(S,)](
+            inp, shape_t, stride_t, values, indices, DIM=dim, RANK=rank, num_warps=1
+        )
         return values, indices
     if dt in (torch.float64, torch.int64):
         d1max = _D1_MAX_64
@@ -489,14 +585,40 @@ def kthvalue(input, k, dim=-1, keepdim=False):
         else:
             nw = 8
         if k <= _SMALL_K:
-            _kth_smallk_kernel[(S,)](inp, shape_t, stride_t, values, indices,
-                                     D, k, SENT=sent, IS_FP=is_fp, UPCAST16=up16,
-                                     LAST_TIE=(D <= 4), BLOCK=BLOCK,
-                                     DIM=dim, RANK=rank, num_warps=nw)
+            _kth_smallk_kernel[(S,)](
+                inp,
+                shape_t,
+                stride_t,
+                values,
+                indices,
+                D,
+                k,
+                SENT=sent,
+                IS_FP=is_fp,
+                UPCAST16=up16,
+                LAST_TIE=(D <= 4),
+                BLOCK=BLOCK,
+                DIM=dim,
+                RANK=rank,
+                num_warps=nw,
+            )
         else:
-            _kth_single_kernel[(S,)](inp, shape_t, stride_t, values, indices, D, k,
-                                     SENT=sent, IS_FP=is_fp, UPCAST16=up16, BLOCK=BLOCK,
-                                     DIM=dim, RANK=rank, num_warps=nw)
+            _kth_single_kernel[(S,)](
+                inp,
+                shape_t,
+                stride_t,
+                values,
+                indices,
+                D,
+                k,
+                SENT=sent,
+                IS_FP=is_fp,
+                UPCAST16=up16,
+                BLOCK=BLOCK,
+                DIM=dim,
+                RANK=rank,
+                num_warps=nw,
+            )
         return values, indices
     # ---- radix path ----
     if dt == torch.float32:
@@ -518,29 +640,81 @@ def kthvalue(input, k, dim=-1, keepdim=False):
     kt = torch.int32 if w == 32 else torch.int64
     dev = inp.device
     skey = ("radix", dev, S, G, int(kt == torch.int32))
-    hist, lo, krem, vkey, less, eq = _get_scratch(skey, lambda: (
-        torch.zeros(S * 256, dtype=torch.int32, device=dev),
-        torch.zeros(S, dtype=kt, device=dev),
-        torch.empty(S, dtype=torch.int64, device=dev),
-        torch.empty(S, dtype=kt, device=dev),
-        torch.empty(S * G, dtype=torch.int32, device=dev),
-        torch.empty(S * G, dtype=torch.int32, device=dev)))
+    hist, lo, krem, vkey, less, eq = _get_scratch(
+        skey,
+        lambda: (
+            torch.zeros(S * 256, dtype=torch.int32, device=dev),
+            torch.zeros(S, dtype=kt, device=dev),
+            torch.empty(S, dtype=torch.int64, device=dev),
+            torch.empty(S, dtype=kt, device=dev),
+            torch.empty(S * G, dtype=torch.int32, device=dev),
+            torch.empty(S * G, dtype=torch.int32, device=dev),
+        ),
+    )
     grid_c = (S * G,)
     grid_s = (S,)
     for t in range(nbytes):
-        _radix_count_kernel[grid_c](inp, shape_t, stride_t, hist, lo, D, S, G,
-                                    DIGIT=t, NBYTES=nbytes, CB=CB,
-                                    IS_FP=is_fp, W=w, UP16=(is_fp16 or is_bf16),
-                                    DIM=dim, RANK=rank, num_warps=4)
-        _radix_narrow_kernel[grid_s](hist, lo, krem, vkey, S, k,
-                                     DIGIT=t, NBYTES=nbytes, num_warps=1)
-    _radix_lesseq_kernel[grid_c](inp, shape_t, stride_t, less, eq, vkey, D, S, G,
-                                 CB=CB, IS_FP=is_fp, W=w, UP16=(is_fp16 or is_bf16),
-                                 DIM=dim, RANK=rank, num_warps=4)
-    _radix_index_kernel[grid_s](inp, shape_t, stride_t, vkey, less, eq,
-                                values, indices, D, S, G, k, CB=CB,
-                                IS_FP=is_fp, W=w, IS_FP16=is_fp16, IS_BF16=is_bf16,
-                                DIM=dim, RANK=rank, num_warps=4, BLOCK=256)
+        _radix_count_kernel[grid_c](
+            inp,
+            shape_t,
+            stride_t,
+            hist,
+            lo,
+            D,
+            S,
+            G,
+            DIGIT=t,
+            NBYTES=nbytes,
+            CB=CB,
+            IS_FP=is_fp,
+            W=w,
+            UP16=(is_fp16 or is_bf16),
+            DIM=dim,
+            RANK=rank,
+            num_warps=4,
+        )
+        _radix_narrow_kernel[grid_s](
+            hist, lo, krem, vkey, S, k, DIGIT=t, NBYTES=nbytes, num_warps=1
+        )
+    _radix_lesseq_kernel[grid_c](
+        inp,
+        shape_t,
+        stride_t,
+        less,
+        eq,
+        vkey,
+        D,
+        S,
+        G,
+        CB=CB,
+        IS_FP=is_fp,
+        W=w,
+        UP16=(is_fp16 or is_bf16),
+        DIM=dim,
+        RANK=rank,
+        num_warps=4,
+    )
+    _radix_index_kernel[grid_s](
+        inp,
+        shape_t,
+        stride_t,
+        vkey,
+        less,
+        eq,
+        values,
+        indices,
+        D,
+        S,
+        G,
+        k,
+        CB=CB,
+        IS_FP=is_fp,
+        W=w,
+        IS_FP16=is_fp16,
+        IS_BF16=is_bf16,
+        DIM=dim,
+        RANK=rank,
+        num_warps=4,
+        BLOCK=256,
+    )
     return values, indices
-
-

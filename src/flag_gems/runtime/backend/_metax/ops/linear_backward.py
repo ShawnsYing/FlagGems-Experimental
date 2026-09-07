@@ -13,16 +13,16 @@
 # limitations under the License.
 
 import logging
-
-logger = logging.getLogger(__name__)
-
 import os
-
-os.environ.setdefault("MACA_PATH", "/opt/maca")
 
 import torch
 import triton
 import triton.language as tl
+
+logger = logging.getLogger(__name__)
+
+
+os.environ.setdefault("MACA_PATH", "/opt/maca")
 
 
 # ---------------------------------------------------------------------------
@@ -33,10 +33,21 @@ import triton.language as tl
 # ---------------------------------------------------------------------------
 @triton.jit
 def _gi_kernel(
-    go_ptr, w_ptr, gi_ptr,
-    M, N, K,
-    go_sm, go_sk, w_sk, w_sn, gi_sm, gi_sn,
-    BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    go_ptr,
+    w_ptr,
+    gi_ptr,
+    M,
+    N,
+    K,
+    go_sm,
+    go_sk,
+    w_sk,
+    w_sn,
+    gi_sm,
+    gi_sn,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
 ):
     pid = tl.program_id(0)
@@ -66,10 +77,16 @@ def _gi_kernel(
     if prev < K:
         rk = (prev + tl.arange(0, BLOCK_K)).to(tl.int64)
         mk = rk < K
-        a = tl.load(go_ptr + ram[:, None] * go_sm + rk[None, :] * go_sk,
-                    mask=mk[None, :], other=0.0)
-        b = tl.load(w_ptr + rk[:, None] * w_sk + rbn[None, :] * w_sn,
-                    mask=mk[:, None], other=0.0)
+        a = tl.load(
+            go_ptr + ram[:, None] * go_sm + rk[None, :] * go_sk,
+            mask=mk[None, :],
+            other=0.0,
+        )
+        b = tl.load(
+            w_ptr + rk[:, None] * w_sk + rbn[None, :] * w_sn,
+            mask=mk[:, None],
+            other=0.0,
+        )
         acc = tl.dot(a, b, acc, out_dtype=tl.float32, allow_tf32=False)
 
     out = acc.to(gi_ptr.dtype.element_ty)
@@ -84,11 +101,23 @@ def _gi_kernel(
 # ---------------------------------------------------------------------------
 @triton.jit
 def _gw_kernel(
-    go_ptr, inp_ptr, gw_ptr, bias_ptr,
-    K, N, M,
-    go_sm, go_sk, inp_sm, inp_sn, gw_sk, gw_sn,
+    go_ptr,
+    inp_ptr,
+    gw_ptr,
+    bias_ptr,
+    K,
+    N,
+    M,
+    go_sm,
+    go_sk,
+    inp_sm,
+    inp_sn,
+    gw_sk,
+    gw_sn,
     COMPUTE_BIAS: tl.constexpr,
-    BLOCK_K: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_M: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_M: tl.constexpr,
     GROUP_M: tl.constexpr,
 ):
     pid = tl.program_id(0)
@@ -116,12 +145,17 @@ def _gw_kernel(
         # Load go as [BLOCK_M, BLOCK_K] (coalesced along k, stride 1) and
         # input as [BLOCK_M, BLOCK_N]; a = trans(go_tile) is an in-kernel
         # register/smem transpose, avoiding stride-K column loads entirely.
-        go_tile = tl.load(go_ptr + mm[:, None] * go_sm + rak[None, :] * go_sk,
-                          mask=mmask[:, None], other=0.0)
-        b = tl.load(inp_ptr + mm[:, None] * inp_sm + rbn[None, :] * inp_sn,
-                    mask=mmask[:, None], other=0.0)
-        acc = tl.dot(tl.trans(go_tile), b, acc, out_dtype=tl.float32,
-                     allow_tf32=False)
+        go_tile = tl.load(
+            go_ptr + mm[:, None] * go_sm + rak[None, :] * go_sk,
+            mask=mmask[:, None],
+            other=0.0,
+        )
+        b = tl.load(
+            inp_ptr + mm[:, None] * inp_sm + rbn[None, :] * inp_sn,
+            mask=mmask[:, None],
+            other=0.0,
+        )
+        acc = tl.dot(tl.trans(go_tile), b, acc, out_dtype=tl.float32, allow_tf32=False)
         if COMPUTE_BIAS and pid_n == 0:
             # fp16/bf16 tl.sum would round in the low-precision dtype (and the
             # MACA backend fails to lower bf16 reductions); accumulate fp32.
@@ -131,8 +165,7 @@ def _gw_kernel(
     msk = (rk < K)[:, None] & (rn < N)[None, :]
     tl.store(gw_ptr + rk[:, None] * gw_sk + rn[None, :] * gw_sn, out, mask=msk)
     if COMPUTE_BIAS and pid_n == 0:
-        tl.store(bias_ptr + rk, bias_acc.to(bias_ptr.dtype.element_ty),
-                 mask=(rk < K))
+        tl.store(bias_ptr + rk, bias_acc.to(bias_ptr.dtype.element_ty), mask=(rk < K))
 
 
 # ---------------------------------------------------------------------------
@@ -140,10 +173,14 @@ def _gw_kernel(
 # ---------------------------------------------------------------------------
 @triton.jit
 def _gb_kernel(
-    go_ptr, bias_ptr,
-    K, M,
-    go_sm, go_sk,
-    BLOCK_K: tl.constexpr, BLOCK_M: tl.constexpr,
+    go_ptr,
+    bias_ptr,
+    K,
+    M,
+    go_sm,
+    go_sk,
+    BLOCK_K: tl.constexpr,
+    BLOCK_M: tl.constexpr,
 ):
     pid = tl.program_id(0)
     rk = pid * BLOCK_K + tl.arange(0, BLOCK_K)
@@ -154,8 +191,11 @@ def _gb_kernel(
     acc = tl.zeros((BLOCK_K,), dtype=tl.float32)
     for m0 in range(0, M, BLOCK_M):
         mm = m0 + rm
-        tile = tl.load(go_ptr + mm[:, None] * go_sm + rak[None, :] * go_sk,
-                       mask=(mm < M)[:, None], other=0.0)
+        tile = tl.load(
+            go_ptr + mm[:, None] * go_sm + rak[None, :] * go_sk,
+            mask=(mm < M)[:, None],
+            other=0.0,
+        )
         acc += tl.sum(tile.to(tl.float32), axis=0)
     tl.store(bias_ptr + rk, acc.to(bias_ptr.dtype.element_ty), mask=(rk < K))
 
@@ -232,7 +272,9 @@ def linear_backward(input, grad_output, weight, output_mask):
     if mask[0] and (mask[1] or mask[2]):
         gi = torch.empty((M, N), device=input.device, dtype=input.dtype)
         gi_cfg, gw_cfg = _configs(input.dtype, M)
-        grid_gi = (triton.cdiv(M, gi_cfg["BLOCK_M"]) * triton.cdiv(N, gi_cfg["BLOCK_N"]),)
+        grid_gi = (
+            triton.cdiv(M, gi_cfg["BLOCK_M"]) * triton.cdiv(N, gi_cfg["BLOCK_N"]),
+        )
         if mask[1]:
             gw = torch.empty((K, N), device=input.device, dtype=weight.dtype)
         if mask[2]:
@@ -242,35 +284,67 @@ def linear_backward(input, grad_output, weight, output_mask):
         side.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(side):
             if mask[1]:
-                grid_gw = (triton.cdiv(K, gw_cfg["BLOCK_K"]) * triton.cdiv(N, gw_cfg["BLOCK_N"]),)
+                grid_gw = (
+                    triton.cdiv(K, gw_cfg["BLOCK_K"])
+                    * triton.cdiv(N, gw_cfg["BLOCK_N"]),
+                )
                 bias_ptr = gb if (mask[2] and gb is not None) else gw
                 _gw_kernel[grid_gw](
-                    go2, x2, gw, bias_ptr, K, N, M,
-                    go2.stride(0), go2.stride(1),
-                    x2.stride(0), x2.stride(1),
-                    gw.stride(0), gw.stride(1),
+                    go2,
+                    x2,
+                    gw,
+                    bias_ptr,
+                    K,
+                    N,
+                    M,
+                    go2.stride(0),
+                    go2.stride(1),
+                    x2.stride(0),
+                    x2.stride(1),
+                    gw.stride(0),
+                    gw.stride(1),
                     COMPUTE_BIAS=bool(mask[2]),
-                    BLOCK_K=gw_cfg["BLOCK_K"], BLOCK_N=gw_cfg["BLOCK_N"],
-                    BLOCK_M=gw_cfg["BLOCK_M"], GROUP_M=8,
-                    num_warps=gw_cfg["warps"], num_stages=gw_cfg["stages"],
+                    BLOCK_K=gw_cfg["BLOCK_K"],
+                    BLOCK_N=gw_cfg["BLOCK_N"],
+                    BLOCK_M=gw_cfg["BLOCK_M"],
+                    GROUP_M=8,
+                    num_warps=gw_cfg["warps"],
+                    num_stages=gw_cfg["stages"],
                 )
             else:
                 grid_gb = (triton.cdiv(K, 128),)
                 _gb_kernel[grid_gb](
-                    go2, gb, K, M,
-                    go2.stride(0), go2.stride(1),
-                    BLOCK_K=128, BLOCK_M=32,
-                    num_warps=4, num_stages=2,
+                    go2,
+                    gb,
+                    K,
+                    M,
+                    go2.stride(0),
+                    go2.stride(1),
+                    BLOCK_K=128,
+                    BLOCK_M=32,
+                    num_warps=4,
+                    num_stages=2,
                 )
             ev.record(side)
         _gi_kernel[grid_gi](
-            go2, weight, gi, M, N, K,
-            go2.stride(0), go2.stride(1),
-            weight.stride(0), weight.stride(1),
-            gi.stride(0), gi.stride(1),
-            BLOCK_M=gi_cfg["BLOCK_M"], BLOCK_N=gi_cfg["BLOCK_N"],
-            BLOCK_K=gi_cfg["BLOCK_K"], GROUP_M=8,
-            num_warps=gi_cfg["warps"], num_stages=gi_cfg["stages"],
+            go2,
+            weight,
+            gi,
+            M,
+            N,
+            K,
+            go2.stride(0),
+            go2.stride(1),
+            weight.stride(0),
+            weight.stride(1),
+            gi.stride(0),
+            gi.stride(1),
+            BLOCK_M=gi_cfg["BLOCK_M"],
+            BLOCK_N=gi_cfg["BLOCK_N"],
+            BLOCK_K=gi_cfg["BLOCK_K"],
+            GROUP_M=8,
+            num_warps=gi_cfg["warps"],
+            num_stages=gi_cfg["stages"],
         )
         torch.cuda.current_stream().wait_event(ev)
         if input.dim() > 2:
@@ -282,12 +356,24 @@ def linear_backward(input, grad_output, weight, output_mask):
         cfg, _ = _configs(input.dtype, M)
         grid = (triton.cdiv(M, cfg["BLOCK_M"]) * triton.cdiv(N, cfg["BLOCK_N"]),)
         _gi_kernel[grid](
-            go2, weight, gi, M, N, K,
-            go2.stride(0), go2.stride(1),
-            weight.stride(0), weight.stride(1),
-            gi.stride(0), gi.stride(1),
-            BLOCK_M=cfg["BLOCK_M"], BLOCK_N=cfg["BLOCK_N"], BLOCK_K=cfg["BLOCK_K"],
-            GROUP_M=8, num_warps=cfg["warps"], num_stages=cfg["stages"],
+            go2,
+            weight,
+            gi,
+            M,
+            N,
+            K,
+            go2.stride(0),
+            go2.stride(1),
+            weight.stride(0),
+            weight.stride(1),
+            gi.stride(0),
+            gi.stride(1),
+            BLOCK_M=cfg["BLOCK_M"],
+            BLOCK_N=cfg["BLOCK_N"],
+            BLOCK_K=cfg["BLOCK_K"],
+            GROUP_M=8,
+            num_warps=cfg["warps"],
+            num_stages=cfg["stages"],
         )
         if input.dim() > 2:
             gi = gi.view(*batch_dims, N)
@@ -303,21 +389,40 @@ def linear_backward(input, grad_output, weight, output_mask):
             grid = (triton.cdiv(K, cfg["BLOCK_K"]) * triton.cdiv(N, cfg["BLOCK_N"]),)
             bias_ptr = gb if (mask[2] and gb is not None) else gw
             _gw_kernel[grid](
-                go2, x2, gw, bias_ptr, K, N, M,
-                go2.stride(0), go2.stride(1),
-                x2.stride(0), x2.stride(1),
-                gw.stride(0), gw.stride(1),
+                go2,
+                x2,
+                gw,
+                bias_ptr,
+                K,
+                N,
+                M,
+                go2.stride(0),
+                go2.stride(1),
+                x2.stride(0),
+                x2.stride(1),
+                gw.stride(0),
+                gw.stride(1),
                 COMPUTE_BIAS=bool(mask[2]),
-                BLOCK_K=cfg["BLOCK_K"], BLOCK_N=cfg["BLOCK_N"], BLOCK_M=cfg["BLOCK_M"],
-                GROUP_M=8, num_warps=cfg["warps"], num_stages=cfg["stages"],
+                BLOCK_K=cfg["BLOCK_K"],
+                BLOCK_N=cfg["BLOCK_N"],
+                BLOCK_M=cfg["BLOCK_M"],
+                GROUP_M=8,
+                num_warps=cfg["warps"],
+                num_stages=cfg["stages"],
             )
         else:
             grid = (triton.cdiv(K, 128),)
             _gb_kernel[grid](
-                go2, gb, K, M,
-                go2.stride(0), go2.stride(1),
-                BLOCK_K=128, BLOCK_M=32,
-                num_warps=4, num_stages=2,
+                go2,
+                gb,
+                K,
+                M,
+                go2.stride(0),
+                go2.stride(1),
+                BLOCK_K=128,
+                BLOCK_M=32,
+                num_warps=4,
+                num_stages=2,
             )
 
     return gi, gw, gb
