@@ -66,6 +66,7 @@ from .index_add import index_add, index_add_
 from .index_copy_ import index_copy, index_copy_
 from .index_select_backward import index_select_backward
 from .isin import isin
+from .jagged_to_padded_dense_forward import jagged_to_padded_dense_forward
 from .lcm import lcm, lcm_
 from .linalg_ldl_factor import ldl_factor
 from .linalg_matrix_norm import linalg_matrix_norm
@@ -186,6 +187,7 @@ __all__ = [
     "index_copy_",
     "index_select_backward",
     "isin",
+    "jagged_to_padded_dense_forward",
     "lcm",
     "lcm_",
     "ldl_factor",
