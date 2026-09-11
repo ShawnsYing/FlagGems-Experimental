@@ -60,6 +60,7 @@ from .resolve_conj import resolve_conj
 from .rsqrt import rsqrt, rsqrt_
 from .sigmoid import sigmoid
 from .special_bessel_j0 import special_bessel_j0, special_bessel_j0_out
+from .special_bessel_y0 import special_bessel_y0
 from .special_chebyshev_polynomial_u import special_chebyshev_polynomial_u
 from .special_chebyshev_polynomial_w import (
     special_chebyshev_polynomial_w,
@@ -164,6 +165,7 @@ __all__ = [
     "sigmoid",
     "special_bessel_j0",
     "special_bessel_j0_out",
+    "special_bessel_y0",
     "special_chebyshev_polynomial_u",
     "special_chebyshev_polynomial_w",
     "special_chebyshev_polynomial_w_out",
