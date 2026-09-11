@@ -56,6 +56,7 @@ from .prod import prod, prod_dim
 from .renorm import renorm, renorm_
 from .repeat import repeat
 from .repeat_interleave import repeat_interleave_self_tensor
+from .replication_pad3d_backward import replication_pad3d_backward
 from .resolve_conj import resolve_conj
 from .rsqrt import rsqrt, rsqrt_
 from .sigmoid import sigmoid
@@ -158,6 +159,7 @@ __all__ = [
     "renorm_",
     "repeat",
     "repeat_interleave_self_tensor",
+    "replication_pad3d_backward",
     "resolve_conj",
     "rsqrt",
     "rsqrt_",
