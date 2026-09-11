@@ -84,37 +84,7 @@ def special_bessel_j0(A):
     return out
 
 
-    ), "Input and output must have the same number of elements"
-    assert x.dtype == out.dtype, "Input and output must have the same dtype"
-
-    n_elements = x.numel()
-    if n_elements == 0:
-        return
-
-    BLOCK_SIZE = 1024
-    COMPUTE_DTYPE = _torch_dtype_to_triton(x.dtype)
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-    with torch_device_fn.device(x.device):
-        _special_bessel_j0_kernel[grid](
-            x, out, n_elements, BLOCK_SIZE=BLOCK_SIZE, COMPUTE_DTYPE=COMPUTE_DTYPE
-        )
-
-
-def special_bessel_j0(x: torch.Tensor):
-    logger.debug("GEMS_METAX SPECIAL_BESSEL_J0")
-    x_c = x.contiguous()
-    out = torch.empty_like(x_c)
-    _launch_special_bessel_j0(x_c, out)
-    if x.layout == torch.strided and x.is_contiguous():
-        return out
-    else:
-        return out.view_as(x)
-
-
 def special_bessel_j0_out(x: torch.Tensor, out: torch.Tensor):
-    logger.debug("GEMS_METAX SPECIAL_BESSEL_J0_OUT")
-    if out.dtype != x.dtype:
-        raise TypeError("out dtype must match input dtype")
-    if out.device != x.device:
-        raise TypeError("out device must match input device")
-
+    logging.debug("GEMS SPECIAL_BESSEL_J0_OUT")
+    special_bessel_j0(x, out=out)
+    return out
