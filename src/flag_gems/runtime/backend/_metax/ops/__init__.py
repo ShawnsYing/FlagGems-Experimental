@@ -28,6 +28,7 @@ from .kthvalue import kthvalue
 from .layernorm import layer_norm, layer_norm_backward
 from .lcm import lcm
 from .lgamma_ import lgamma, lgamma_
+from .linalg_cholesky import linalg_cholesky
 from .linalg_qr import linalg_qr, linalg_qr_out
 from .linalg_solve_triangular import (
     linalg_solve_triangular,
@@ -124,6 +125,7 @@ __all__ = [
     "lcm",
     "lgamma",
     "lgamma_",
+    "linalg_cholesky",
     "linalg_qr",
     "linalg_qr_out",
     "linalg_solve_triangular",
