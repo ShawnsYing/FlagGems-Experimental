@@ -102,6 +102,7 @@ from .replication_pad2d_backward import (
     replication_pad2d_backward,
     replication_pad2d_backward_grad_input,
 )
+from .replication_pad3d_backward import replication_pad3d_backward
 from .scatter import scatter, scatter_
 from .searchsorted import (
     searchsorted,
@@ -212,6 +213,7 @@ __all__ = [
     "repeat",
     "replication_pad2d_backward",
     "replication_pad2d_backward_grad_input",
+    "replication_pad3d_backward",
     "scaled_dot_product_attention",
     "scaled_dot_product_attention_backward",
     "scaled_dot_product_attention_forward",
