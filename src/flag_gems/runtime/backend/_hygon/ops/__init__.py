@@ -119,6 +119,7 @@ from .special_chebyshev_polynomial_w import (
     special_chebyshev_polynomial_w,
     special_chebyshev_polynomial_w_out,
 )
+from .special_shifted_chebyshev_polynomial_u import special_shifted_chebyshev_polynomial_u
 from .split_with_sizes_copy import split_with_sizes_copy
 from .tile import tile
 from .unique import _unique2
@@ -234,6 +235,7 @@ __all__ = [
     "special_chebyshev_polynomial_v",
     "special_chebyshev_polynomial_w",
     "special_chebyshev_polynomial_w_out",
+    "special_shifted_chebyshev_polynomial_u",
     "split_with_sizes_copy",
     "tile",
     "true_divide",
