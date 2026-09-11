@@ -156,3 +156,8 @@ def lgamma_(A):
     grid = (triton.cdiv(n, BLOCK),)
     _lgamma_kernel[grid](A, n, F64=f64, LOWP=lowp, BLOCK=BLOCK)
     return A
+
+
+def lgamma(A):
+    logging.debug("GEMS LGAMMA")
+    return torch.lgamma(A)
