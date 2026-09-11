@@ -136,6 +136,7 @@ from .unique import _unique2
 from .unique_dim import unique_dim
 from .unsqueeze import unsqueeze, unsqueeze_
 from .upsample_nearest2d import upsample_nearest2d
+from .upsample_nearest_exact2d_backward import upsample_nearest_exact2d_backward
 from .weight_norm import (
     weight_norm,
     weight_norm_except_dim,
@@ -265,6 +266,7 @@ __all__ = [
     "unsqueeze",
     "unsqueeze_",
     "upsample_nearest2d",
+    "upsample_nearest_exact2d_backward",
     "weight_norm",
     "weight_norm_except_dim",
     "weight_norm_except_dim_backward",
