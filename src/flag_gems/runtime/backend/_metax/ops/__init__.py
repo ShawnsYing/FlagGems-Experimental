@@ -11,6 +11,7 @@ from .avg_pool3d import avg_pool3d_backward
 from .baddbmm import baddbmm, baddbmm_out
 from .bmm import bmm
 from .broadcast_to import broadcast_to
+from .cholesky_inverse import cholesky_inverse
 from .cholesky_solve import cholesky_solve, cholesky_solve_out
 from .conv_depthwise2d import _conv_depthwise2d
 from .conv_transpose1d import conv_transpose1d, conv_transpose1d_output_size
@@ -123,6 +124,7 @@ __all__ = [
     "baddbmm_out",
     "bmm",
     "broadcast_to",
+    "cholesky_inverse",
     "cholesky_solve",
     "cholesky_solve_out",
     "conv_transpose1d",
