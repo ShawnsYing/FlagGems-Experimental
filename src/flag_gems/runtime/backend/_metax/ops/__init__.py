@@ -1,21 +1,27 @@
 from ._make_dep_token import _make_dep_token
 from ._nested_view_from_buffer_copy import _nested_view_from_buffer_copy
 from ._thnn_fused_lstm_cell_backward_impl import _thnn_fused_lstm_cell_backward_impl
+from .adaptive_avg_pool2d_backward import _adaptive_avg_pool2d_backward
 from .adaptive_max_pool3d_backward import adaptive_max_pool3d_backward
 from .addmm import addmm, addmm_dtype, addmm_dtype_out, addmm_out
 from .addmv_ import addmv_
 from .alpha_dropout import alpha_dropout
 from .amax import amax
 from .arange import arange, arange_start
+from .arccosh_ import arccosh_
+from .as_strided_scatter import as_strided_scatter
 from .avg_pool3d import avg_pool3d_backward
 from .baddbmm import baddbmm, baddbmm_out
 from .bmm import bmm
 from .broadcast_to import broadcast_to
+from .cholesky_inverse import cholesky_inverse
 from .cholesky_solve import cholesky_solve, cholesky_solve_out
 from .conv_depthwise2d import _conv_depthwise2d
 from .conv_transpose1d import conv_transpose1d, conv_transpose1d_output_size
+from .cudnn_convolution import cudnn_convolution
 from .erfinv import erfinv
 from .exponential_ import exponential_
+from .float_power_ import float_power_tensor_scalar_, float_power_tensor_tensor_
 from .full import full
 from .full_like import full_like
 from .gcd_ import gcd_
@@ -31,6 +37,7 @@ from .isin import isin
 from .kthvalue import kthvalue
 from .layernorm import layer_norm, layer_norm_backward
 from .lcm import lcm
+from .lcm_ import lcm_
 from .lgamma_ import lgamma, lgamma_
 from .linalg_cholesky import linalg_cholesky
 from .linalg_ldl_factor import ldl_factor
@@ -43,6 +50,7 @@ from .linalg_svdvals import linalg_svdvals
 from .log_sigmoid_forward import log_sigmoid_forward
 from .log_softmax import log_softmax, log_softmax_backward
 from .logcumsumexp import logcumsumexp
+from .logcumsumexp_out import logcumsumexp_out
 from .logical_not_ import logical_not_
 from .logical_or import logical_or, logical_or_
 from .lt_ import lt_, lt_scalar_
@@ -83,6 +91,7 @@ from .special_chebyshev_polynomial_w import (
 )
 from .special_gammainc import special_gammainc
 from .special_gammaln import special_gammaln
+from .special_legendre_polynomial_p import special_legendre_polynomial_p
 from .special_multigammaln import special_multigammaln
 from .special_round import special_round
 from .special_round_out import special_round_out
@@ -102,6 +111,7 @@ from .zeros import zeros
 from .zeros_like import zeros_like
 
 __all__ = [
+    "_adaptive_avg_pool2d_backward",
     "_conv_depthwise2d",
     "_make_dep_token",
     "_nested_view_from_buffer_copy",
@@ -119,17 +129,23 @@ __all__ = [
     "amax",
     "arange",
     "arange_start",
+    "arccosh_",
+    "as_strided_scatter",
     "avg_pool3d_backward",
     "baddbmm",
     "baddbmm_out",
     "bmm",
     "broadcast_to",
+    "cholesky_inverse",
     "cholesky_solve",
     "cholesky_solve_out",
     "conv_transpose1d",
     "conv_transpose1d_output_size",
+    "cudnn_convolution",
     "erfinv",
     "exponential_",
+    "float_power_tensor_scalar_",
+    "float_power_tensor_tensor_",
     "full",
     "full_like",
     "gcd_",
@@ -147,6 +163,7 @@ __all__ = [
     "layer_norm",
     "layer_norm_backward",
     "lcm",
+    "lcm_",
     "ldl_factor",
     "lgamma",
     "lgamma_",
@@ -160,6 +177,7 @@ __all__ = [
     "log_softmax",
     "log_softmax_backward",
     "logcumsumexp",
+    "logcumsumexp_out",
     "logical_not_",
     "logical_or",
     "logical_or_",
@@ -210,6 +228,7 @@ __all__ = [
     "special_chebyshev_polynomial_w_out",
     "special_gammainc",
     "special_gammaln",
+    "special_legendre_polynomial_p",
     "special_multigammaln",
     "special_round",
     "special_round_out",
