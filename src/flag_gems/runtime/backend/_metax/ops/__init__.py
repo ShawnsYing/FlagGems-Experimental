@@ -32,6 +32,7 @@ from .layernorm import layer_norm, layer_norm_backward
 from .lcm import lcm
 from .lgamma_ import lgamma, lgamma_
 from .linalg_cholesky import linalg_cholesky
+from .linalg_ldl_factor import ldl_factor
 from .linalg_qr import linalg_qr, linalg_qr_out
 from .linalg_solve_triangular import (
     linalg_solve_triangular,
@@ -140,6 +141,7 @@ __all__ = [
     "layer_norm",
     "layer_norm_backward",
     "lcm",
+    "ldl_factor",
     "lgamma",
     "lgamma_",
     "linalg_cholesky",
