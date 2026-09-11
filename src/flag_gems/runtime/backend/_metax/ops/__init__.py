@@ -19,6 +19,7 @@ from .full_like import full_like
 from .greater_equal import greater_equal_
 from .groupnorm import group_norm
 from .gt_scalar_ import gt_scalar_
+from .gt_tensor_ import gt_tensor_
 from .hadamard_transform import hadamard_transform
 from .index import index
 from .index_put import index_put, index_put_
@@ -112,6 +113,7 @@ __all__ = [
     "greater_equal_",
     "group_norm",
     "gt_scalar_",
+    "gt_tensor_",
     "hadamard_transform",
     "index",
     "index_put",
