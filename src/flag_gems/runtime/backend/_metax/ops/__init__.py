@@ -48,6 +48,7 @@ from .masked_scatter import masked_scatter, masked_scatter_, masked_scatter_impl
 from .masked_scatter_backward import masked_scatter_backward
 from .matmul_bf16 import matmul_bf16
 from .matmul_int8 import matmul_int8
+from .max_pool3d_with_indices_backward import max_pool3d_with_indices_backward
 from .min import min, min_dim
 from .mm import mm, mm_out
 from .mvlgamma import mvlgamma
@@ -162,6 +163,7 @@ __all__ = [
     "masked_fill",
     "masked_fill_",
     "masked_scatter_backward",
+    "max_pool3d_with_indices_backward",
     "min_dim",
     "min",
     "mm",
