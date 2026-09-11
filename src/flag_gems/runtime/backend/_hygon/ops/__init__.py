@@ -88,6 +88,7 @@ from .max_pool3d_with_indices import (
 from .max_unpool2d import max_unpool2d
 from .median import median_dim, median_dim_values
 from .mm import mm
+from .mse_loss_backward import mse_loss_backward
 from .mul import mul, mul_
 from .mvlgamma import mvlgamma
 from .nansum import nansum, nansum_out
@@ -211,6 +212,7 @@ __all__ = [
     "median_dim",
     "median_dim_values",
     "mm",
+    "mse_loss_backward",
     "mul",
     "mul_",
     "mvlgamma",
