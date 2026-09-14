@@ -123,6 +123,7 @@ from .replication_pad2d_backward import (
 )
 from .replication_pad3d_backward import replication_pad3d_backward
 from .scatter import scatter, scatter_
+from .scatter_add import scatter_add
 from .searchsorted import (
     searchsorted,
     searchsorted_out,
@@ -266,6 +267,7 @@ __all__ = [
     "scaled_dot_product_attention_forward",
     "scatter",
     "scatter_",
+    "scatter_add",
     "searchsorted",
     "searchsorted_out",
     "searchsorted_scalar",
