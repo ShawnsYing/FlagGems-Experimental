@@ -81,7 +81,7 @@ from .isin import isin
 from .jagged_to_padded_dense_forward import jagged_to_padded_dense_forward
 from .lcm import lcm, lcm_
 from .lift_fresh import lift_fresh
-from .linalg_ldl_factor import ldl_factor
+from .linalg_ldl_factor import ldl_factor, linalg_ldl_factor
 from .linalg_matrix_norm import linalg_matrix_norm
 from .linalg_solve_triangular import (
     linalg_solve_triangular,
@@ -228,6 +228,7 @@ __all__ = [
     "lcm_",
     "ldl_factor",
     "lift_fresh",
+    "linalg_ldl_factor",
     "linalg_matrix_norm",
     "linalg_solve_triangular",
     "linalg_solve_triangular_out",
