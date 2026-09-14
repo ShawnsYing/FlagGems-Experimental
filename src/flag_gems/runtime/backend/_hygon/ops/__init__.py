@@ -151,6 +151,7 @@ from .special_shifted_chebyshev_polynomial_v import (
     special_shifted_chebyshev_polynomial_v,
 )
 from .split_with_sizes_copy import split_with_sizes_copy
+from .thnn_fused_lstm_cell import thnn_fused_lstm_cell
 from .tile import tile
 from .unique import _unique2
 from .unique_dim import unique_dim
@@ -292,6 +293,7 @@ __all__ = [
     "special_shifted_chebyshev_polynomial_u",
     "special_shifted_chebyshev_polynomial_v",
     "split_with_sizes_copy",
+    "thnn_fused_lstm_cell",
     "tile",
     "true_divide",
     "true_divide_",
