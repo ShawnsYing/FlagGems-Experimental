@@ -638,11 +638,6 @@ _FULL_CONFIG = (
     ("diff", diff),
     ("digamma", digamma),
     ("digamma_", digamma_),
-    # aten::dim is not a dispatcher operator on this build (it is a JIT
-    # primitive plus a Python Tensor method; probes: probe1..probe14 in the
-    # run dir). A device-key registration is unreachable dead code, so the
-    # entry registers no extra dispatch key and the implementation is tested
-    # through its direct call path, mirroring the can_cast investigation.
     ("dim", dim),
     ("dist", dist),
     ("div.out", true_divide_out),
@@ -1238,14 +1233,10 @@ _FULL_CONFIG = (
     (
         "sparse_coo_tensor.indices",
         sparse_coo_tensor_indices,
-        None,
-        (COMPOSITE_IMPLICIT_AUTOGRAD_DISPATCH_KEY,),
     ),
     (
         "sparse_coo_tensor.indices_size",
         sparse_coo_tensor_indices_size,
-        None,
-        (COMPOSITE_IMPLICIT_AUTOGRAD_DISPATCH_KEY,),
     ),
     (
         "sparse_coo_tensor.size",
@@ -1258,6 +1249,18 @@ _FULL_CONFIG = (
         sparse_coo_tensor_size_out,
         None,
         (SPARSE_DISPATCH_KEY,),
+    ),
+    (
+        "sparse_csr_tensor.crow_col_value",
+        sparse_csr_tensor_crow_col_value,
+        None,
+        (COMPOSITE_IMPLICIT_AUTOGRAD_DISPATCH_KEY,),
+    ),
+    (
+        "sparse_csr_tensor.crow_col_value_size",
+        sparse_csr_tensor_crow_col_value_size,
+        None,
+        (COMPOSITE_IMPLICIT_AUTOGRAD_DISPATCH_KEY,),
     ),
     (
         "sparse_dim",
