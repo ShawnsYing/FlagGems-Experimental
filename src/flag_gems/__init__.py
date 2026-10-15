@@ -76,6 +76,17 @@ CONJUGATE_DISPATCH_KEY = torch._C.DispatchKey.Conjugate.name
 # with no backend key at all); a device-key registration would never be
 # selected for their real inputs. Measured per op (can_cast,
 # sparse_coo_tensor.indices/.indices_size, coalesce).
+# sparse_csc_tensor's two overloads are tensor-input constructors whose native
+# kernels live on CompositeImplicitAutograd only. The plain device key serves
+# the layout-less call forms, but an explicit layout= argument selects the
+# composite key instead (measured with sentinels on a fresh process per key:
+# layout= -> CompositeImplicitAutograd, layout=None for every other form ->
+# device key). Both keys are therefore registered -- the plain device key
+# unconditionally by register_impl (runtime/op_registrar.py always calls
+# lib.impl on the device key first) and CompositeImplicitAutograd via the
+# extra-key tuple below -- exactly as the accepted sparse_csr_tensor
+# integration does; registering the device key alone would ship an
+# unreachable implementation for every layout-qualified call.
 COMPOSITE_IMPLICIT_AUTOGRAD_DISPATCH_KEY = (
     torch._C.DispatchKey.CompositeImplicitAutograd.name
 )
@@ -1282,8 +1293,6 @@ _FULL_CONFIG = (
     (
         "sparse_bsr_tensor.crow_col_value",
         sparse_bsr_tensor_crow_col_value,
-        "sparse_compressed_tensor.comp_plain_value",
-        sparse_compressed_tensor,
         None,
         (AUTOGRAD_DISPATCH_KEY,),
     ),
@@ -1292,6 +1301,14 @@ _FULL_CONFIG = (
         sparse_bsr_tensor_crow_col_value_size,
         None,
         (AUTOGRAD_DISPATCH_KEY,),
+    ),
+    (
+        "sparse_compressed_tensor.comp_plain_value",
+        sparse_compressed_tensor,
+        None,
+        (AUTOGRAD_DISPATCH_KEY,),
+    ),
+    (
         "sparse_compressed_tensor.comp_plain_value_size",
         sparse_compressed_tensor_size,
     ),
@@ -1314,6 +1331,32 @@ _FULL_CONFIG = (
         sparse_coo_tensor_size_out,
         None,
         (SPARSE_DISPATCH_KEY,),
+    ),
+    # sparse_csc_tensor: two ATen overloads, measured per key with labelled
+    # sentinels in a fresh process per (overload, key) pair. Neither overload
+    # has a backend kernel: they are pure composite constructors. A call that
+    # omits layout= resolves on the plain device key, while an explicit
+    # layout= argument selects CompositeImplicitAutograd -- so both keys carry
+    # the implementation (the accepted sparse_csr_tensor arrangement). The
+    # sparse backend keys (SparseCUDA / SparseCsrCUDA) are dead here: CSC is
+    # the *output* layout and every input is a plain strided tensor.
+    #
+    # The Python builtin torch.sparse_csc_tensor does NOT route through either
+    # overload: its C++ argument parser calls the shared
+    # aten::sparse_compressed_tensor.comp_plain_value[_size] op (owned by the
+    # sparse_compressed_tensor integration). What the tests and the benchmark
+    # exercise is the packet surface registered here.
+    (
+        "sparse_csc_tensor.ccol_row_value",
+        sparse_csc_tensor_ccol_row_value,
+        None,
+        (COMPOSITE_IMPLICIT_AUTOGRAD_DISPATCH_KEY,),
+    ),
+    (
+        "sparse_csc_tensor.ccol_row_value_size",
+        sparse_csc_tensor_ccol_row_value_size,
+        None,
+        (COMPOSITE_IMPLICIT_AUTOGRAD_DISPATCH_KEY,),
     ),
     (
         "sparse_csr_tensor.crow_col_value",
