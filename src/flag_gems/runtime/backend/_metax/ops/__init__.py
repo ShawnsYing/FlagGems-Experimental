@@ -22,6 +22,7 @@ from .cudnn_convolution import cudnn_convolution
 from .erfinv import erfinv
 from .exponential_ import exponential_
 from .float_power_ import float_power_tensor_scalar_, float_power_tensor_tensor_
+from .foreach_minimum_list_ import foreach_minimum_list_
 from .full import full
 from .full_like import full_like
 from .gcd_ import gcd_
@@ -147,6 +148,7 @@ __all__ = [
     "exponential_",
     "float_power_tensor_scalar_",
     "float_power_tensor_tensor_",
+    "foreach_minimum_list_",
     "full",
     "full_like",
     "gcd_",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
