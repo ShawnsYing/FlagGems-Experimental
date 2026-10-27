@@ -38,6 +38,7 @@ from .kthvalue import kthvalue
 from .layernorm import layer_norm, layer_norm_backward
 from .lcm import lcm
 from .lcm_ import lcm_
+from .ldexp_ import ldexp_
 from .lgamma_ import lgamma, lgamma_
 from .linalg_cholesky import linalg_cholesky
 from .linalg_ldl_factor import ldl_factor
@@ -165,6 +166,7 @@ __all__ = [
     "layer_norm_backward",
     "lcm",
     "lcm_",
+    "ldexp_",
     "ldl_factor",
     "lgamma",
     "lgamma_",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
