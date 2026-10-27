@@ -30,6 +30,7 @@ from .groupnorm import group_norm
 from .gt_scalar_ import gt_scalar_
 from .gt_tensor_ import gt_tensor_
 from .hadamard_transform import hadamard_transform
+from .histc import histc
 from .index import index
 from .index_put import index_put, index_put_
 from .index_select import index_select
@@ -155,6 +156,7 @@ __all__ = [
     "gt_scalar_",
     "gt_tensor_",
     "hadamard_transform",
+    "histc",
     "index",
     "index_put",
     "index_put_",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
