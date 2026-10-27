@@ -33,6 +33,7 @@ from .hadamard_transform import hadamard_transform
 from .index import index
 from .index_put import index_put, index_put_
 from .index_select import index_select
+from .inverse import inverse
 from .isin import isin
 from .kthvalue import kthvalue
 from .layernorm import layer_norm, layer_norm_backward
@@ -159,6 +160,7 @@ __all__ = [
     "index_put",
     "index_put_",
     "index_select",
+    "inverse",
     "isin",
     "kthvalue",
     "layer_norm",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
