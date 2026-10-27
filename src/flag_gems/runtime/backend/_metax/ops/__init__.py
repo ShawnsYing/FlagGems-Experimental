@@ -68,6 +68,7 @@ from .nansum import nansum, nansum_out
 from .new_ones import new_ones
 from .nonzero import nonzero
 from .nonzero_numpy import nonzero_numpy
+from .nuclear_norm import nuclear_norm
 from .ones import ones
 from .ones_like import ones_like
 from .ormqr import ormqr
@@ -184,17 +185,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
@@ -204,6 +205,7 @@ __all__ = [
     "new_ones",
     "nonzero",
     "nonzero_numpy",
+    "nuclear_norm",
     "ones",
     "ones_like",
     "ormqr",
