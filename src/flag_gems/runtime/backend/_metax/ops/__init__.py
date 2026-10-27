@@ -41,6 +41,7 @@ from .lcm_ import lcm_
 from .lgamma_ import lgamma, lgamma_
 from .linalg_cholesky import linalg_cholesky
 from .linalg_ldl_factor import ldl_factor
+from .linalg_ldl_factor_ex import ldl_factor_ex
 from .linalg_qr import linalg_qr, linalg_qr_out
 from .linalg_solve_triangular import (
     linalg_solve_triangular,
@@ -166,6 +167,7 @@ __all__ = [
     "lcm",
     "lcm_",
     "ldl_factor",
+    "ldl_factor_ex",
     "lgamma",
     "lgamma_",
     "linalg_cholesky",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
