@@ -18,6 +18,7 @@ from .cholesky_inverse import cholesky_inverse
 from .cholesky_solve import cholesky_solve, cholesky_solve_out
 from .conv_depthwise2d import _conv_depthwise2d
 from .conv_transpose1d import conv_transpose1d, conv_transpose1d_output_size
+from .convolution_double_backward import _convolution_double_backward
 from .cudnn_convolution import cudnn_convolution
 from .erfinv import erfinv
 from .exponential_ import exponential_
@@ -114,6 +115,7 @@ from .zeros_like import zeros_like
 __all__ = [
     "_adaptive_avg_pool2d_backward",
     "_conv_depthwise2d",
+    "_convolution_double_backward",
     "_make_dep_token",
     "_nested_view_from_buffer_copy",
     "_thnn_fused_lstm_cell_backward_impl",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
