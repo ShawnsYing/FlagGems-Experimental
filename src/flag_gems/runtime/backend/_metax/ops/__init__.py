@@ -81,6 +81,7 @@ from .replication_pad3d_backward import replication_pad3d_backward
 from .resolve_conj import resolve_conj
 from .rsqrt import rsqrt, rsqrt_
 from .scalar_tensor import scalar_tensor
+from .scaled_dot_product_attention_math_for_mps import _scaled_dot_product_attention_math_for_mps
 from .sigmoid import sigmoid
 from .special_bessel_j0 import special_bessel_j0, special_bessel_j0_out
 from .special_bessel_y0 import special_bessel_y0
@@ -116,6 +117,7 @@ __all__ = [
     "_conv_depthwise2d",
     "_make_dep_token",
     "_nested_view_from_buffer_copy",
+    "_scaled_dot_product_attention_math_for_mps",
     "_thnn_fused_lstm_cell_backward_impl",
     "_unique2",
     "_unsafe_masked_index_put_accumulate",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
