@@ -21,6 +21,7 @@ from .conv_transpose1d import conv_transpose1d, conv_transpose1d_output_size
 from .cudnn_convolution import cudnn_convolution
 from .erfinv import erfinv
 from .exponential_ import exponential_
+from .fake_quantize_per_tensor_affine_cachemask_backward import fake_quantize_per_tensor_affine_cachemask_backward
 from .float_power_ import float_power_tensor_scalar_, float_power_tensor_tensor_
 from .full import full
 from .full_like import full_like
@@ -145,6 +146,7 @@ __all__ = [
     "cudnn_convolution",
     "erfinv",
     "exponential_",
+    "fake_quantize_per_tensor_affine_cachemask_backward",
     "float_power_tensor_scalar_",
     "float_power_tensor_tensor_",
     "full",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
