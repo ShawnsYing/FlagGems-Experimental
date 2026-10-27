@@ -26,6 +26,7 @@ from .full import full
 from .full_like import full_like
 from .gcd_ import gcd_
 from .greater_equal import greater_equal_
+from .grid_sampler_3d import grid_sampler_3d
 from .groupnorm import group_norm
 from .gt_scalar_ import gt_scalar_
 from .gt_tensor_ import gt_tensor_
@@ -151,6 +152,7 @@ __all__ = [
     "full_like",
     "gcd_",
     "greater_equal_",
+    "grid_sampler_3d",
     "group_norm",
     "gt_scalar_",
     "gt_tensor_",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
