@@ -39,6 +39,7 @@ from .layernorm import layer_norm, layer_norm_backward
 from .lcm import lcm
 from .lcm_ import lcm_
 from .lgamma_ import lgamma, lgamma_
+from .lift_fresh import lift_fresh
 from .linalg_cholesky import linalg_cholesky
 from .linalg_ldl_factor import ldl_factor
 from .linalg_qr import linalg_qr, linalg_qr_out
@@ -168,6 +169,7 @@ __all__ = [
     "ldl_factor",
     "lgamma",
     "lgamma_",
+    "lift_fresh",
     "linalg_cholesky",
     "linalg_qr",
     "linalg_qr_out",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
