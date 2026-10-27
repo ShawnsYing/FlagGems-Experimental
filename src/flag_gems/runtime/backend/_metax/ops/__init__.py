@@ -19,6 +19,7 @@ from .cholesky_solve import cholesky_solve, cholesky_solve_out
 from .conv_depthwise2d import _conv_depthwise2d
 from .conv_transpose1d import conv_transpose1d, conv_transpose1d_output_size
 from .cudnn_convolution import cudnn_convolution
+from .dequantize import dequantize
 from .erfinv import erfinv
 from .exponential_ import exponential_
 from .float_power_ import float_power_tensor_scalar_, float_power_tensor_tensor_
@@ -143,6 +144,7 @@ __all__ = [
     "conv_transpose1d",
     "conv_transpose1d_output_size",
     "cudnn_convolution",
+    "dequantize",
     "erfinv",
     "exponential_",
     "float_power_tensor_scalar_",
@@ -184,17 +186,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
