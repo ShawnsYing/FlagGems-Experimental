@@ -99,6 +99,7 @@ from .special_round_out import special_round_out
 from .special_shifted_chebyshev_polynomial_w import (
     special_shifted_chebyshev_polynomial_w,
 )
+from .standard_gamma_grad import standard_gamma_grad
 from .tanh import tanh
 from .to_copy import to_copy
 from .unique import _unique2
@@ -184,17 +185,17 @@ __all__ = [
     "logical_or_",
     "lt_",
     "lt_scalar_",
+    "masked_fill",
+    "masked_fill_",
     "masked_scatter",
     "masked_scatter_",
+    "masked_scatter_backward",
     "masked_scatter_impl",
     "matmul_bf16",
     "matmul_int8",
-    "masked_fill",
-    "masked_fill_",
-    "masked_scatter_backward",
     "max_pool3d_with_indices_backward",
-    "min_dim",
     "min",
+    "min_dim",
     "mm",
     "mm_out",
     "mvlgamma",
@@ -235,6 +236,7 @@ __all__ = [
     "special_round",
     "special_round_out",
     "special_shifted_chebyshev_polynomial_w",
+    "standard_gamma_grad",
     "tanh",
     "to_copy",
     "upsample_linear1d",
